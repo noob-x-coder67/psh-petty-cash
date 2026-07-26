@@ -96,16 +96,23 @@ export default tseslint.config(
   },
   {
     files: ["apps/api/src/**/*.ts"],
-    ignores: ["apps/api/src/**/*.repository.ts"],
+    // *.repository.ts files are the module data-access layer; prisma.service.ts is the
+    // single shared connection-lifecycle wrapper (onModuleInit/onModuleDestroy) that
+    // repositories inject rather than each instantiating their own PrismaClient.
+    ignores: ["apps/api/src/**/*.repository.ts", "apps/api/src/common/prisma/prisma.service.ts"],
     rules: {
-      "no-restricted-imports": [
+      // Type-only imports (RoleKey, UnitType, ...) are fine anywhere — only the runtime
+      // PrismaClient value is restricted to the data-access layer.
+      "no-restricted-imports": "off",
+      "@typescript-eslint/no-restricted-imports": [
         "error",
         {
           paths: [
             {
               name: "@prisma/client",
+              allowTypeImports: true,
               message:
-                "Only *.repository.ts files (and prisma/) may import PrismaClient (Build Plan §1.3).",
+                "Only *.repository.ts files, prisma.service.ts (and prisma/) may import PrismaClient (Build Plan §1.3).",
             },
           ],
         },

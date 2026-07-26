@@ -69,11 +69,30 @@ model User {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  userRoles      UserRole[]
-  unitAccess     UserUnitAccess[] @relation("AccessGrantee")
-  grantedAccess  UserUnitAccess[] @relation("AccessGrantor")
+  userRoles     UserRole[]
+  unitAccess    UserUnitAccess[] @relation("AccessGrantee")
+  grantedAccess UserUnitAccess[] @relation("AccessGrantor")
+  sessions      Session[]
 
   @@map("users")
+}
+
+model Session {
+  id                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  familyId          String    @map("family_id") @db.Uuid
+  refreshTokenHash  String    @unique @map("refresh_token_hash")
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(6)
+  lastUsedAt        DateTime? @map("last_used_at") @db.Timestamptz(6)
+  ipAddress         String?   @map("ip_address")
+  userAgent         String?   @map("user_agent")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([familyId])
+  @@map("sessions")
 }
 
 model Role {

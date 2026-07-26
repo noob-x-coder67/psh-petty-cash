@@ -1,6 +1,14 @@
+import argon2 from "argon2";
 import { PrismaClient, type RoleKey, type UnitType } from "@prisma/client";
 
 const prisma = new PrismaClient();
+
+// Same parameters as apps/api/src/common/security/password.ts (Build Plan §6.1 minimum:
+// m=19456,t=2,p=1). Duplicated rather than imported across the prisma/ <-> apps/api
+// boundary since this script is meant to stand alone.
+async function hashDemoPassword(plain: string): Promise<string> {
+  return argon2.hash(plain, { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 });
+}
 
 // Appendix E: exactly the 9 petty-cash-enabled units plus PSH-ISB (petty_cash_enabled=false).
 // Flat under a single implicit Head Office — Appendix E names no Head Office row and no
@@ -76,8 +84,11 @@ export const ROLE_PERMISSIONS: Record<string, RoleKey[]> = {
   "report.export": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN", "AUDITOR"],
 };
 
-// Not a real Argon2id hash — the auth task replaces this. No login is possible with it.
-const SEED_PASSWORD_PLACEHOLDER = "UNSET-SEED-PLACEHOLDER-NOT-A-REAL-HASH";
+// Demo-only credential for every seeded user — this is a local/demo dataset (SRS §18.3:
+// "no real financial data... redacted sample bills only"), never a production password.
+// Real per-user credentials and a forced password-change flow are an operator task once
+// this seed is ever pointed at a non-demo environment (must_change_password exists for it).
+export const DEMO_PASSWORD = "Demo-Passw0rd!";
 
 export const DEMO_USERS: Array<{
   email: string;
@@ -96,6 +107,8 @@ export const DEMO_USERS: Array<{
 ];
 
 async function main(): Promise<void> {
+  const passwordHash = await hashDemoPassword(DEMO_PASSWORD);
+
   for (const unit of UNITS) {
     await prisma.organizationalUnit.upsert({
       where: { code: unit.code },
@@ -136,12 +149,12 @@ async function main(): Promise<void> {
   // reference it.
   const superAdmin = await prisma.user.upsert({
     where: { email: "superadmin@psh.local" },
-    update: {},
+    update: { passwordHash },
     create: {
       email: "superadmin@psh.local",
       username: "superadmin",
       fullName: "Super Admin",
-      passwordHash: SEED_PASSWORD_PLACEHOLDER,
+      passwordHash,
     },
   });
 
@@ -151,12 +164,12 @@ async function main(): Promise<void> {
         ? superAdmin
         : await prisma.user.upsert({
             where: { email: demoUser.email },
-            update: { username: demoUser.username, fullName: demoUser.fullName },
+            update: { username: demoUser.username, fullName: demoUser.fullName, passwordHash },
             create: {
               email: demoUser.email,
               username: demoUser.username,
               fullName: demoUser.fullName,
-              passwordHash: SEED_PASSWORD_PLACEHOLDER,
+              passwordHash,
             },
           });
 

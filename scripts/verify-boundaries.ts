@@ -81,17 +81,44 @@ async function main(): Promise<void> {
     pass("apps/web -> packages/contracts import remains allowed.");
   }
 
-  // 5. Only *.repository.ts (and prisma/) may import PrismaClient.
+  // 5. Only *.repository.ts, prisma.service.ts (and prisma/) may import PrismaClient as a value.
   if (
     await ruleFired(
       'import { PrismaClient } from "@prisma/client";\nexport const client = new PrismaClient();\n',
       "apps/api/src/__prisma_fixture__.ts",
-      "no-restricted-imports",
+      "@typescript-eslint/no-restricted-imports",
     )
   ) {
-    pass("PrismaClient import outside *.repository.ts is rejected.");
+    pass("PrismaClient value import outside *.repository.ts is rejected.");
   } else {
-    fail("PrismaClient import outside *.repository.ts was NOT rejected.");
+    fail("PrismaClient value import outside *.repository.ts was NOT rejected.");
+  }
+
+  // 5b. A type-only import from @prisma/client (e.g. RoleKey) is fine anywhere — only
+  //     the runtime value is restricted.
+  if (
+    await ruleFired(
+      'import type { RoleKey } from "@prisma/client";\nexport type Fixture = RoleKey;\n',
+      "apps/api/src/__prisma_type_fixture__.ts",
+      "@typescript-eslint/no-restricted-imports",
+    )
+  ) {
+    fail("a type-only @prisma/client import was rejected, but type imports are allowed.");
+  } else {
+    pass("type-only @prisma/client imports remain allowed outside *.repository.ts.");
+  }
+
+  // 5c. prisma.service.ts itself is the one designated exception besides *.repository.ts.
+  if (
+    await ruleFired(
+      'import { PrismaClient } from "@prisma/client";\nexport class Fixture extends PrismaClient {}\n',
+      "apps/api/src/common/prisma/prisma.service.ts",
+      "@typescript-eslint/no-restricted-imports",
+    )
+  ) {
+    fail("prisma.service.ts was rejected, but it is the designated PrismaClient wrapper.");
+  } else {
+    pass("prisma.service.ts remains allowed to import PrismaClient.");
   }
 
   // 6. packages/contracts has zero runtime dependencies beyond zod.

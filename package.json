@@ -23,7 +23,8 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "6.19.3"
+    "@prisma/client": "6.19.3",
+    "argon2": "^0.45.1"
   },
   "devDependencies": {
     "@psh/config": "workspace:*",
