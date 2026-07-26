@@ -1,0 +1,23 @@
+{
+  "name": "@psh/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@psh/config": "workspace:*",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.10",
+    "vite": "^8.1.5",
+    "@types/node": "^26.1.1"
+  }
+}

@@ -1,0 +1,115 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { ESLint } from "eslint";
+
+// Proves the Phase 0 exit gate (Technical Build Plan §5): the dependency-boundary
+// rules in eslint.config.js actually reject the imports Build Plan §1.3 forbids,
+// and don't reject the ones it allows. Fixtures are linted in-memory (ESLint#lintText)
+// against real, on-disk import targets — nothing illegal is ever committed.
+
+const repoRoot = process.cwd();
+const eslint = new ESLint({ cwd: repoRoot });
+
+let failures = 0;
+
+function pass(message: string): void {
+  console.log(`PASS: ${message}`);
+}
+
+function fail(message: string, detail?: unknown): void {
+  failures += 1;
+  console.error(`FAIL: ${message}`);
+  if (detail !== undefined) console.error(detail);
+}
+
+async function ruleFired(code: string, filePath: string, ruleId: string): Promise<boolean> {
+  const results = await eslint.lintText(code, { filePath: path.join(repoRoot, filePath) });
+  const messages = results[0]?.messages ?? [];
+  if (process.env.DEBUG_BOUNDARIES) {
+    console.error(`[debug] ${filePath}:`, JSON.stringify(messages, null, 2));
+  }
+  return messages.some((m) => m.ruleId === ruleId);
+}
+
+async function main(): Promise<void> {
+  // 1. The real codebase must lint clean under the boundary rules.
+  const realResults = await eslint.lintFiles(["apps/**/*.{ts,tsx}", "packages/**/*.{ts,tsx}"]);
+  const realErrors = realResults.flatMap((r) => r.messages.filter((m) => m.severity === 2));
+  if (realErrors.length === 0) {
+    pass("real codebase lints clean under the boundary rules.");
+  } else {
+    fail(`real codebase has ${realErrors.length} lint error(s).`, realErrors);
+  }
+
+  // 2. apps/web -> apps/api must be rejected.
+  if (
+    await ruleFired(
+      'import { AppModule } from "../../api/src/app.module";\nexport const fixture = AppModule;\n',
+      "apps/web/src/__boundary_fixture__.ts",
+      "boundaries/dependencies",
+    )
+  ) {
+    pass("apps/web -> apps/api import is rejected.");
+  } else {
+    fail("apps/web -> apps/api import was NOT rejected.");
+  }
+
+  // 3. apps/api -> packages/ui must be rejected (the reverse boundary).
+  if (
+    await ruleFired(
+      'import "../../../packages/ui/src/index";\n',
+      "apps/api/src/__boundary_fixture__.ts",
+      "boundaries/dependencies",
+    )
+  ) {
+    pass("apps/api -> packages/ui import is rejected.");
+  } else {
+    fail("apps/api -> packages/ui import was NOT rejected.");
+  }
+
+  // 4. apps/web -> packages/contracts must remain allowed (sanity control — the
+  //    rule set must not be so broad it rejects everything).
+  if (
+    await ruleFired(
+      'import "../../../packages/contracts/src/index";\n',
+      "apps/web/src/__boundary_fixture__.ts",
+      "boundaries/dependencies",
+    )
+  ) {
+    fail("apps/web -> packages/contracts was rejected, but this import is allowed.");
+  } else {
+    pass("apps/web -> packages/contracts import remains allowed.");
+  }
+
+  // 5. Only *.repository.ts (and prisma/) may import PrismaClient.
+  if (
+    await ruleFired(
+      'import { PrismaClient } from "@prisma/client";\nexport const client = new PrismaClient();\n',
+      "apps/api/src/__prisma_fixture__.ts",
+      "no-restricted-imports",
+    )
+  ) {
+    pass("PrismaClient import outside *.repository.ts is rejected.");
+  } else {
+    fail("PrismaClient import outside *.repository.ts was NOT rejected.");
+  }
+
+  // 6. packages/contracts has zero runtime dependencies beyond zod.
+  const contractsPkg = JSON.parse(
+    readFileSync(path.join(repoRoot, "packages/contracts/package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  const extraDeps = Object.keys(contractsPkg.dependencies ?? {}).filter((dep) => dep !== "zod");
+  if (extraDeps.length === 0) {
+    pass("packages/contracts has zero runtime dependencies beyond zod.");
+  } else {
+    fail(`packages/contracts has extra runtime dependencies: ${extraDeps.join(", ")}`);
+  }
+
+  if (failures > 0) {
+    console.error(`\n${failures} boundary check(s) failed.`);
+    process.exit(1);
+  }
+  console.log("\nAll boundary checks passed.");
+}
+
+void main();
