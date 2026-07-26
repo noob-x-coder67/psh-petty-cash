@@ -15,7 +15,12 @@
     "build": "turbo run build",
     "verify:boundaries": "tsx scripts/verify-boundaries.ts",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma"
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "test:int": "turbo run test:int"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3"

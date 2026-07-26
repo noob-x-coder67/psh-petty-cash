@@ -9,6 +9,9 @@
       "dependsOn": ["^build"]
     },
     "test": {},
+    "test:int": {
+      "cache": false
+    },
     "dev": {
       "cache": false,
       "persistent": true

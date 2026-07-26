@@ -57,6 +57,9 @@ importers:
       '@nestjs/platform-express':
         specifier: ^11.1.28
         version: 11.1.28(@nestjs/common@11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@7.2.0))(@nestjs/core@11.1.28)(supports-color@7.2.0)
+      '@prisma/client':
+        specifier: 6.19.3
+        version: 6.19.3(prisma@6.19.3(typescript@6.0.3))(typescript@6.0.3)
       reflect-metadata:
         specifier: ^0.2.2
         version: 0.2.2

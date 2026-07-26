@@ -1,8 +1,138 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [citext]
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+enum UnitType {
+  HEAD_OFFICE
+  CENTER
+  PROJECT
+  PROJECT_LOCATION
+  SERVICE
+
+  @@map("unit_type")
+}
+
+enum RoleKey {
+  SUPER_ADMIN
+  FINANCE_MANAGER
+  FINANCE_OFFICER
+  UNIT_USER
+  UNIT_INCHARGE
+  AUDITOR
+  SUPPORT
+
+  @@map("role_key")
+}
+
+model OrganizationalUnit {
+  id               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  code             String   @unique
+  name             String
+  type             UnitType
+  city             String?
+  parentId         String?  @map("parent_id") @db.Uuid
+  pettyCashEnabled Boolean  @default(false) @map("petty_cash_enabled")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parent   OrganizationalUnit?  @relation("UnitHierarchy", fields: [parentId], references: [id])
+  children OrganizationalUnit[] @relation("UnitHierarchy")
+
+  userUnitAccess UserUnitAccess[]
+
+  // uq_unit_id_pce: no consumer yet in this phase — Phase 2's petty_cash_accounts
+  // composite FK (PSH-ISB's structural exclusion) references this pair.
+  @@unique([id, pettyCashEnabled], map: "uq_unit_id_pce")
+  @@map("organizational_units")
+}
+
+model User {
+  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  email              String    @unique @db.Citext
+  username           String    @unique
+  passwordHash       String    @map("password_hash")
+  fullName           String    @map("full_name")
+  isActive           Boolean   @default(true) @map("is_active")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(6)
+  totpSecretEnc      String?   @map("totp_secret_enc")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userRoles      UserRole[]
+  unitAccess     UserUnitAccess[] @relation("AccessGrantee")
+  grantedAccess  UserUnitAccess[] @relation("AccessGrantor")
+
+  @@map("users")
+}
+
+model Role {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  key       RoleKey  @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model UserUnitAccess {
+  userId    String   @map("user_id") @db.Uuid
+  unitId    String   @map("unit_id") @db.Uuid
+  grantedBy String   @map("granted_by") @db.Uuid
+  grantedAt DateTime @default(now()) @map("granted_at") @db.Timestamptz(6)
+
+  user    User               @relation("AccessGrantee", fields: [userId], references: [id])
+  grantor User               @relation("AccessGrantor", fields: [grantedBy], references: [id])
+  unit    OrganizationalUnit @relation(fields: [unitId], references: [id])
+
+  @@id([userId, unitId])
+  @@map("user_unit_access")
 }
