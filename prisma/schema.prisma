@@ -1,6 +1,7 @@
 datasource db {
   provider   = "postgresql"
   url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_DATABASE_URL")
   extensions = [citext]
 }
 
@@ -17,6 +18,19 @@ enum UnitType {
   SERVICE
 
   @@map("unit_type")
+}
+
+enum LedgerEntryType {
+  OPENING
+  ALLOCATION
+  REPLENISHMENT
+  EXPENSE
+  CASH_RETURN
+  ADJUSTMENT_POSITIVE
+  ADJUSTMENT_NEGATIVE
+  REVERSAL
+
+  @@map("ledger_entry_type")
 }
 
 enum RoleKey {
@@ -46,7 +60,8 @@ model OrganizationalUnit {
   parent   OrganizationalUnit?  @relation("UnitHierarchy", fields: [parentId], references: [id])
   children OrganizationalUnit[] @relation("UnitHierarchy")
 
-  userUnitAccess UserUnitAccess[]
+  userUnitAccess   UserUnitAccess[]
+  pettyCashAccount PettyCashAccount?
 
   // uq_unit_id_pce: no consumer yet in this phase — Phase 2's petty_cash_accounts
   // composite FK (PSH-ISB's structural exclusion) references this pair.
@@ -69,10 +84,13 @@ model User {
   createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  userRoles     UserRole[]
-  unitAccess    UserUnitAccess[] @relation("AccessGrantee")
-  grantedAccess UserUnitAccess[] @relation("AccessGrantor")
-  sessions      Session[]
+  userRoles            UserRole[]
+  unitAccess           UserUnitAccess[] @relation("AccessGrantee")
+  grantedAccess        UserUnitAccess[] @relation("AccessGrantor")
+  sessions             Session[]
+  postedLedgerEntries  CashLedgerEntry[]
+  issuedAllocations    CashAllocation[]  @relation("AllocationIssuer")
+  confirmedAllocations CashAllocation[]  @relation("AllocationConfirmer")
 
   @@map("users")
 }
@@ -154,4 +172,82 @@ model UserUnitAccess {
 
   @@id([userId, unitId])
   @@map("user_unit_access")
+}
+
+model PettyCashAccount {
+  id                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  unitId              String    @unique @map("unit_id") @db.Uuid
+  approvedFloat       Decimal   @default(0) @map("approved_float") @db.Decimal(14, 2)
+  lowBalanceThreshold Decimal?  @map("low_balance_threshold") @db.Decimal(14, 2)
+  cachedBalance       Decimal   @default(0) @map("cached_balance") @db.Decimal(14, 2)
+  cachedBalanceAt     DateTime? @map("cached_balance_at") @db.Timestamptz(6)
+  isActive            Boolean   @default(true) @map("is_active")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // unit_petty_cash_enabled (GENERATED ALWAYS AS (true) STORED) and the composite FK it
+  // backs (fk_account_requires_enabled_unit — PSH-ISB's third and final structural
+  // defense layer, BR-016/R-11) are hand-written SQL in the migration, deliberately not
+  // modeled here (tried Prisma's Unsupported() type — it makes migrate-diff loosen the
+  // NOT NULL/generated-ness instead of proposing a clean drop, which is worse, not
+  // better). CONSEQUENCE: any future auto-generated migration touching this table WILL
+  // propose dropping this column and/or fk_account_requires_enabled_unit — that diff
+  // must be hand-stripped before applying, same create-only-then-review discipline as
+  // every migration in this project, just with this specific object named here as a
+  // flag for whoever's reviewing it.
+  unit          OrganizationalUnit @relation(fields: [unitId], references: [id])
+  ledgerEntries CashLedgerEntry[]
+  allocations   CashAllocation[]
+
+  @@map("petty_cash_accounts")
+}
+
+model CashLedgerEntry {
+  id              String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId       String          @map("account_id") @db.Uuid
+  entryType       LedgerEntryType @map("entry_type")
+  direction       Int             @db.SmallInt
+  amount          Decimal         @db.Decimal(14, 2)
+  effectiveDate   DateTime        @map("effective_date") @db.Date
+  sourceTable     String?         @map("source_table")
+  sourceId        String?         @map("source_id") @db.Uuid
+  reversesEntryId String?         @map("reverses_entry_id") @db.Uuid
+  balanceAfter    Decimal         @map("balance_after") @db.Decimal(14, 2)
+  createdBy       String          @map("created_by") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // signed_amount / period_year / period_month are GENERATED ALWAYS AS columns, hand-
+  // written in the migration SQL and deliberately not modeled here — see the note on
+  // PettyCashAccount.unit (same Unsupported() trade-off applies; not repeated per field).
+  // Any future auto-generated migration touching this table will propose dropping
+  // these three columns and the ix_ledger_* indexes below — hand-strip before applying.
+  account       PettyCashAccount  @relation(fields: [accountId], references: [id])
+  creator       User              @relation(fields: [createdBy], references: [id])
+  reversesEntry CashLedgerEntry?  @relation("ReversalChain", fields: [reversesEntryId], references: [id])
+  reversedBy    CashLedgerEntry[] @relation("ReversalChain")
+
+  @@map("cash_ledger_entries")
+}
+
+model CashAllocation {
+  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId       String    @map("account_id") @db.Uuid
+  amount          Decimal   @db.Decimal(14, 2)
+  issueDate       DateTime  @map("issue_date") @db.Date
+  referenceNo     String?   @map("reference_no")
+  paymentMode     String?   @map("payment_mode")
+  remarks         String?
+  issuedBy        String    @map("issued_by") @db.Uuid
+  confirmedAmount Decimal?  @map("confirmed_amount") @db.Decimal(14, 2)
+  confirmedDate   DateTime? @map("confirmed_date") @db.Date
+  confirmedBy     String?   @map("confirmed_by") @db.Uuid
+  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  idempotencyKey  String    @unique @map("idempotency_key")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account   PettyCashAccount @relation(fields: [accountId], references: [id])
+  issuer    User             @relation("AllocationIssuer", fields: [issuedBy], references: [id])
+  confirmer User?            @relation("AllocationConfirmer", fields: [confirmedBy], references: [id])
+
+  @@map("cash_allocations")
 }

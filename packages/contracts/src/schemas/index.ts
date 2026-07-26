@@ -1,3 +1,4 @@
+export * from "./allocations.js";
 export * from "./auth.js";
 
-// Voucher, line, allocation and filter schemas land here starting Phase 2.
+// Voucher and line schemas land here starting Phase 3.

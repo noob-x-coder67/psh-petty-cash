@@ -121,6 +121,21 @@ async function main(): Promise<void> {
     pass("prisma.service.ts remains allowed to import PrismaClient.");
   }
 
+  // 5d. Prisma.Decimal (money arithmetic, rule 14 — never float) is a value import from
+  // @prisma/client too, but it is not database access — only the PrismaClient class
+  // itself is restricted (importNames), so this must remain allowed everywhere.
+  if (
+    await ruleFired(
+      'import { Prisma } from "@prisma/client";\nexport const amount = new Prisma.Decimal("1.00");\n',
+      "apps/api/src/common/ledger/__decimal_fixture__.ts",
+      "@typescript-eslint/no-restricted-imports",
+    )
+  ) {
+    fail("Prisma.Decimal was rejected outside *.repository.ts, but it is not database access.");
+  } else {
+    pass("Prisma.Decimal remains usable anywhere — only PrismaClient itself is restricted.");
+  }
+
   // 6. packages/contracts has zero runtime dependencies beyond zod.
   const contractsPkg = JSON.parse(
     readFileSync(path.join(repoRoot, "packages/contracts/package.json"), "utf8"),

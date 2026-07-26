@@ -101,8 +101,9 @@ export default tseslint.config(
     // repositories inject rather than each instantiating their own PrismaClient.
     ignores: ["apps/api/src/**/*.repository.ts", "apps/api/src/common/prisma/prisma.service.ts"],
     rules: {
-      // Type-only imports (RoleKey, UnitType, ...) are fine anywhere — only the runtime
-      // PrismaClient value is restricted to the data-access layer.
+      // Only the PrismaClient value itself is restricted to the data-access layer.
+      // Type-only imports (RoleKey, UnitType, ...) and the Prisma.Decimal value (money
+      // arithmetic, rule 14 — never float) are fine anywhere; they're not database access.
       "no-restricted-imports": "off",
       "@typescript-eslint/no-restricted-imports": [
         "error",
@@ -110,6 +111,7 @@ export default tseslint.config(
           paths: [
             {
               name: "@prisma/client",
+              importNames: ["PrismaClient"],
               allowTypeImports: true,
               message:
                 "Only *.repository.ts files, prisma.service.ts (and prisma/) may import PrismaClient (Build Plan §1.3).",
