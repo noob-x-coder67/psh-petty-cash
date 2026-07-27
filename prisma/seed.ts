@@ -46,10 +46,12 @@ export const ROLES: Array<{ key: RoleKey; name: string }> = [
 
 export const PERMISSIONS: Array<{ key: string; description: string }> = [
   { key: "dashboard.view_own_unit", description: "View own unit dashboard" },
+  { key: "dashboard.view_all", description: "View finance-wide Command Center (cross-unit)" },
   { key: "expense.create", description: "Create expense" },
   { key: "expense.edit_saved", description: "Edit saved expense" },
   { key: "receipt.view", description: "View receipt" },
   { key: "receipt.check", description: "Mark receipt Checked" },
+  { key: "attachment.upload", description: "Upload a bill attachment" },
   { key: "allocation.record", description: "Record allocation" },
   { key: "allocation.confirm_receipt", description: "Confirm allocation receipt" },
   { key: "cash_count.enter", description: "Enter physical cash count" },
@@ -69,10 +71,14 @@ export const PERMISSIONS: Array<{ key: string; description: string }> = [
 //   - SUPPORT: zero permissions by default (§6.2 — support must not bypass audit controls).
 export const ROLE_PERMISSIONS: Record<string, RoleKey[]> = {
   "dashboard.view_own_unit": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN", "AUDITOR"],
+  // Matches ALL_UNIT_SCOPE_ROLES (auth-context.repository.ts) — the Command Center
+  // aggregates every unit, so it's gated to the same roles that get unitScope.all.
+  "dashboard.view_all": ["FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN", "AUDITOR"],
   "expense.create": ["UNIT_USER", "UNIT_INCHARGE"],
   "expense.edit_saved": ["FINANCE_MANAGER", "SUPER_ADMIN"],
   "receipt.view": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN", "AUDITOR"],
   "receipt.check": ["FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],
+  "attachment.upload": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],
   "allocation.record": ["FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],
   "allocation.confirm_receipt": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_MANAGER", "SUPER_ADMIN"],
   "cash_count.enter": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],

@@ -122,6 +122,26 @@ export default tseslint.config(
     },
   },
   {
+    files: ["apps/api/src/**/*.ts"],
+    ignores: ["apps/api/src/storage/**"],
+    rules: {
+      // Rule 18: nothing outside apps/api/src/storage/** may reference a driver by
+      // name — callers depend on the AttachmentStorage interface/DI token instead.
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/storage/postgres-bytea.driver*", "**/storage/filesystem.driver*"],
+              message:
+                "Only apps/api/src/storage/** may reference a storage driver by name (CLAUDE.md rule 18).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     rules: {
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
     },

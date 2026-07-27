@@ -6,14 +6,20 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import type { PettyCashAccount } from "@prisma/client";
+import { AuditLogRepository } from "../../common/audit/audit-log.repository";
+import { PrismaService } from "../../common/prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AccountsRepository } from "./accounts.repository";
 
 @Injectable()
 export class AccountsService {
-  constructor(private readonly accountsRepository: AccountsRepository) {}
+  constructor(
+    private readonly accountsRepository: AccountsRepository,
+    private readonly auditLogRepository: AuditLogRepository,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  async enableAccount(unitId: string): Promise<PettyCashAccount> {
+  async enableAccount(unitId: string, actor: AuthenticatedUser): Promise<PettyCashAccount> {
     const unit = await this.accountsRepository.findUnitById(unitId);
     if (!unit) {
       throw new NotFoundException(`Unit ${unitId} not found`);
@@ -28,7 +34,20 @@ export class AccountsService {
     if (existing) {
       throw new ConflictException(`Unit ${unit.code} already has a petty-cash account`);
     }
-    return this.accountsRepository.create(unitId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const account = await this.accountsRepository.create(unitId, tx);
+      await this.auditLogRepository.record(tx, {
+        actorId: actor.id,
+        actorRole: actor.roleKeys[0] ?? null,
+        action: "ACCOUNT_ENABLE",
+        entityType: "petty_cash_accounts",
+        entityId: account.id,
+        unitId: unit.id,
+        after: account,
+      });
+      return account;
+    });
   }
 
   async getAccountForUser(accountId: string, user: AuthenticatedUser): Promise<PettyCashAccount> {

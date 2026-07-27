@@ -24,7 +24,7 @@ export class AllocationsController {
     @Body(new ZodValidationPipe(CreateAllocationRequestSchema)) body: CreateAllocationRequest,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<CashAllocation> {
-    return this.allocationsService.createAllocation({ ...body, issuedBy: user.id });
+    return this.allocationsService.createAllocation({ ...body, issuer: user });
   }
 
   @Post(":id/confirm")

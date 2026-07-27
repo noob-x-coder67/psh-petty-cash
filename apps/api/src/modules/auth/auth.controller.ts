@@ -73,7 +73,10 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ success: true }> {
     const refreshToken = (req.cookies as Record<string, string> | undefined)?.[REFRESH_TOKEN_COOKIE];
     if (refreshToken) {
-      await this.authService.logout(refreshToken);
+      await this.authService.logout(refreshToken, {
+        ipAddress: req.ip ?? null,
+        userAgent: req.headers["user-agent"] ?? null,
+      });
     }
     res.clearCookie(ACCESS_TOKEN_COOKIE, { path: "/" });
     res.clearCookie(REFRESH_TOKEN_COOKIE, { path: "/" });

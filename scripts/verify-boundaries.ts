@@ -136,6 +136,19 @@ async function main(): Promise<void> {
     pass("Prisma.Decimal remains usable anywhere — only PrismaClient itself is restricted.");
   }
 
+  // 5e. Rule 18: only apps/api/src/storage/** may reference a driver by name.
+  if (
+    await ruleFired(
+      'import { FilesystemStorageDriver } from "../../storage/filesystem.driver";\nexport const fixture = FilesystemStorageDriver;\n',
+      "apps/api/src/modules/__storage_fixture__/x.service.ts",
+      "no-restricted-imports",
+    )
+  ) {
+    pass("storage driver import outside apps/api/src/storage/** is rejected.");
+  } else {
+    fail("storage driver import outside apps/api/src/storage/** was NOT rejected.");
+  }
+
   // 6. packages/contracts has zero runtime dependencies beyond zod.
   const contractsPkg = JSON.parse(
     readFileSync(path.join(repoRoot, "packages/contracts/package.json"), "utf8"),

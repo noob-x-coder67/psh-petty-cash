@@ -1,6 +1,8 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type CashAllocation } from "@prisma/client";
+import { AuditLogRepository } from "../../common/audit/audit-log.repository";
 import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repository";
+import { PrismaService } from "../../common/prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AccountsRepository } from "../accounts/accounts.repository";
 import { AllocationsRepository } from "./allocations.repository";
@@ -13,7 +15,7 @@ export interface CreateAllocationInput {
   paymentMode?: string;
   remarks?: string;
   idempotencyKey: string;
-  issuedBy: string;
+  issuer: AuthenticatedUser;
 }
 
 export interface ConfirmAllocationInput {
@@ -29,6 +31,8 @@ export class AllocationsService {
     private readonly allocationsRepository: AllocationsRepository,
     private readonly accountsRepository: AccountsRepository,
     private readonly ledgerPostingRepository: LedgerPostingRepository,
+    private readonly auditLogRepository: AuditLogRepository,
+    private readonly prisma: PrismaService,
   ) {}
 
   async createAllocation(input: CreateAllocationInput): Promise<CashAllocation> {
@@ -44,15 +48,30 @@ export class AllocationsService {
       throw new NotFoundException(`Unit ${input.unitId} has no petty-cash account`);
     }
 
-    return this.allocationsRepository.create({
-      accountId: account.id,
-      amount: input.amount,
-      issueDate: new Date(input.issueDate),
-      referenceNo: input.referenceNo,
-      paymentMode: input.paymentMode,
-      remarks: input.remarks,
-      issuedBy: input.issuedBy,
-      idempotencyKey: input.idempotencyKey,
+    return this.prisma.$transaction(async (tx) => {
+      const allocation = await this.allocationsRepository.create(
+        {
+          accountId: account.id,
+          amount: input.amount,
+          issueDate: new Date(input.issueDate),
+          referenceNo: input.referenceNo,
+          paymentMode: input.paymentMode,
+          remarks: input.remarks,
+          issuedBy: input.issuer.id,
+          idempotencyKey: input.idempotencyKey,
+        },
+        tx,
+      );
+      await this.auditLogRepository.record(tx, {
+        actorId: input.issuer.id,
+        actorRole: input.issuer.roleKeys[0] ?? null,
+        action: "ALLOCATION_CREATE",
+        entityType: "cash_allocations",
+        entityId: allocation.id,
+        unitId: account.unitId,
+        after: allocation,
+      });
+      return allocation;
     });
   }
 
@@ -77,23 +96,41 @@ export class AllocationsService {
       throw new ForbiddenException("Allocation is outside your authorized scope");
     }
 
-    // Ledger entry is posted only on confirmation (FR-CASH-003) — never on create.
-    await this.ledgerPostingRepository.postEntry({
-      accountId: allocation.accountId,
-      entryType: "ALLOCATION",
-      direction: 1,
-      amount: new Prisma.Decimal(input.confirmedAmount),
-      effectiveDate: new Date(input.confirmedDate),
-      sourceTable: "cash_allocations",
-      sourceId: allocation.id,
-      createdBy: input.confirmedBy.id,
-    });
+    // Ledger post, allocation confirmation, and the audit row all commit or roll back
+    // together — a crash between "ledger posted" and "allocation marked confirmed"
+    // must never happen (this used to be two separate transactions; fixed here).
+    return this.prisma.$transaction(async (tx) => {
+      await this.ledgerPostingRepository.postEntryWithTx(tx, {
+        accountId: allocation.accountId,
+        entryType: "ALLOCATION",
+        direction: 1,
+        amount: new Prisma.Decimal(input.confirmedAmount),
+        effectiveDate: new Date(input.confirmedDate),
+        sourceTable: "cash_allocations",
+        sourceId: allocation.id,
+        createdBy: input.confirmedBy.id,
+      });
 
-    return this.allocationsRepository.markConfirmed(
-      allocation.id,
-      input.confirmedAmount,
-      new Date(input.confirmedDate),
-      input.confirmedBy.id,
-    );
+      const confirmed = await this.allocationsRepository.markConfirmed(
+        allocation.id,
+        input.confirmedAmount,
+        new Date(input.confirmedDate),
+        input.confirmedBy.id,
+        tx,
+      );
+
+      await this.auditLogRepository.record(tx, {
+        actorId: input.confirmedBy.id,
+        actorRole: input.confirmedBy.roleKeys[0] ?? null,
+        action: "ALLOCATION_CONFIRM",
+        entityType: "cash_allocations",
+        entityId: confirmed.id,
+        unitId: account.unitId,
+        before: allocation,
+        after: confirmed,
+      });
+
+      return confirmed;
+    });
   }
 }

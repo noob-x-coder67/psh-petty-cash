@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import type { CashAllocation } from "@prisma/client";
+import type { CashAllocation, Prisma } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
+
+type Client = PrismaService | Prisma.TransactionClient;
 
 export interface CreateAllocationParams {
   accountId: string;
@@ -17,8 +19,8 @@ export interface CreateAllocationParams {
 export class AllocationsRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  async create(params: CreateAllocationParams): Promise<CashAllocation> {
-    return this.prisma.cashAllocation.create({ data: params });
+  async create(params: CreateAllocationParams, client: Client = this.prisma): Promise<CashAllocation> {
+    return client.cashAllocation.create({ data: params });
   }
 
   async findById(id: string): Promise<CashAllocation | null> {
@@ -34,8 +36,9 @@ export class AllocationsRepository {
     confirmedAmount: string,
     confirmedDate: Date,
     confirmedBy: string,
+    client: Client = this.prisma,
   ): Promise<CashAllocation> {
-    return this.prisma.cashAllocation.update({
+    return client.cashAllocation.update({
       where: { id },
       data: { confirmedAmount, confirmedDate, confirmedBy, confirmedAt: new Date() },
     });

@@ -33,6 +33,43 @@ enum LedgerEntryType {
   @@map("ledger_entry_type")
 }
 
+enum ExpenseCategory {
+  BUILDING
+  VEHICLE
+  OTHER
+
+  @@map("expense_category")
+}
+
+// NOT an approval workflow (BR-001) — no third value, ever.
+enum VoucherState {
+  ACTIVE
+  REVERSED
+
+  @@map("voucher_state")
+}
+
+enum StorageDriver {
+  POSTGRES_BYTEA
+  FILESYSTEM
+
+  @@map("storage_driver")
+}
+
+enum ReceiptCheckAction {
+  CHECKED
+  UNCHECKED
+
+  @@map("receipt_check_action")
+}
+
+enum ArchiveScope {
+  UNIT
+  CONSOLIDATED
+
+  @@map("archive_scope")
+}
+
 enum RoleKey {
   SUPER_ADMIN
   FINANCE_MANAGER
@@ -85,27 +122,35 @@ model User {
   updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   userRoles            UserRole[]
-  unitAccess           UserUnitAccess[] @relation("AccessGrantee")
-  grantedAccess        UserUnitAccess[] @relation("AccessGrantor")
+  unitAccess           UserUnitAccess[]    @relation("AccessGrantee")
+  grantedAccess        UserUnitAccess[]    @relation("AccessGrantor")
   sessions             Session[]
   postedLedgerEntries  CashLedgerEntry[]
-  issuedAllocations    CashAllocation[]  @relation("AllocationIssuer")
-  confirmedAllocations CashAllocation[]  @relation("AllocationConfirmer")
+  issuedAllocations    CashAllocation[]    @relation("AllocationIssuer")
+  confirmedAllocations CashAllocation[]    @relation("AllocationConfirmer")
+  enteredVouchers      ExpenseVoucher[]    @relation("VoucherEnteredBy")
+  checkedVouchers      ExpenseVoucher[]    @relation("VoucherCheckedBy")
+  uploadedAttachments  Attachment[]        @relation("AttachmentUploadedBy")
+  deletedAttachments   Attachment[]        @relation("AttachmentDeletedBy")
+  receiptCheckEvents   ReceiptCheckEvent[]
+  generatedArchives    MonthlyArchive[]    @relation("ArchiveGeneratedBy")
+  confirmedArchives    MonthlyArchive[]    @relation("ArchiveConfirmedBy")
+  deletedArchives      MonthlyArchive[]    @relation("ArchiveDeletedBy")
 
   @@map("users")
 }
 
 model Session {
-  id                String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  userId            String    @map("user_id") @db.Uuid
-  familyId          String    @map("family_id") @db.Uuid
-  refreshTokenHash  String    @unique @map("refresh_token_hash")
-  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(6)
-  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(6)
-  lastUsedAt        DateTime? @map("last_used_at") @db.Timestamptz(6)
-  ipAddress         String?   @map("ip_address")
-  userAgent         String?   @map("user_agent")
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  familyId         String    @map("family_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  lastUsedAt       DateTime? @map("last_used_at") @db.Timestamptz(6)
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id])
 
@@ -198,6 +243,9 @@ model PettyCashAccount {
   unit          OrganizationalUnit @relation(fields: [unitId], references: [id])
   ledgerEntries CashLedgerEntry[]
   allocations   CashAllocation[]
+  vouchers      ExpenseVoucher[]
+  counters      VoucherCounter[]
+  archives      MonthlyArchive[]
 
   @@map("petty_cash_accounts")
 }
@@ -250,4 +298,179 @@ model CashAllocation {
   confirmer User?            @relation("AllocationConfirmer", fields: [confirmedBy], references: [id])
 
   @@map("cash_allocations")
+}
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorRole  String?  @map("actor_role")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  unitId     String?  @map("unit_id") @db.Uuid
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  requestId  String?  @map("request_id")
+  reason     String?
+  before     Json?
+  after      Json?
+  diff       Json?
+
+  // No FK to users.id deliberately — an audit row must remain writable (and legible)
+  // even for actors that no longer exist or attempts against unknown/deleted entities.
+  @@index([entityType, entityId, occurredAt(sort: Desc)], map: "ix_audit_entity")
+  @@index([actorId, occurredAt(sort: Desc)], map: "ix_audit_actor")
+  @@map("audit_logs")
+}
+
+model ExpenseVoucher {
+  id                  String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherNo           String       @unique @map("voucher_no")
+  accountId           String       @map("account_id") @db.Uuid
+  expenseDate         DateTime     @map("expense_date") @db.Date
+  billDate            DateTime?    @map("bill_date") @db.Date
+  vendorName          String       @map("vendor_name")
+  vendorBillNo        String?      @map("vendor_bill_no")
+  justification       String
+  billTotal           Decimal      @map("bill_total") @db.Decimal(14, 2)
+  linesTotal          Decimal      @default(0) @map("lines_total") @db.Decimal(14, 2)
+  state               VoucherState @default(ACTIVE)
+  hasBill             Boolean      @default(false) @map("has_bill")
+  missingBillReason   String?      @map("missing_bill_reason")
+  checkedBy           String?      @map("checked_by") @db.Uuid
+  checkedAt           DateTime?    @map("checked_at") @db.Timestamptz(6)
+  isBackdated         Boolean      @default(false) @map("is_backdated")
+  balanceAfter        Decimal?     @map("balance_after") @db.Decimal(14, 2)
+  enteredBy           String       @map("entered_by") @db.Uuid
+  enteredAt           DateTime     @default(now()) @map("entered_at") @db.Timestamptz(6)
+  reversedByVoucherId String?      @map("reversed_by_voucher_id") @db.Uuid
+
+  // lines_total is trigger-maintained (recomputed from expense_lines on insert/update/
+  // delete — a generated column can't aggregate across rows in another table) and
+  // ck_voucher_totals is a DEFERRABLE INITIALLY DEFERRED CHECK the service forces
+  // IMMEDIATE after inserting lines (BR-005, enforced twice: service + trigger/CHECK).
+  // period_year/period_month are GENERATED ALWAYS AS from expense_date, same pattern as
+  // cash_ledger_entries. All hand-written in the migration, not modeled here — any
+  // future auto-generated migration touching this table will propose dropping the
+  // trigger's effects and these generated columns; hand-strip before applying.
+  account           PettyCashAccount    @relation(fields: [accountId], references: [id])
+  enteredByUser     User                @relation("VoucherEnteredBy", fields: [enteredBy], references: [id])
+  checkedByUser     User?               @relation("VoucherCheckedBy", fields: [checkedBy], references: [id])
+  reversedByVoucher ExpenseVoucher?     @relation("VoucherReversalChain", fields: [reversedByVoucherId], references: [id])
+  reversalOf        ExpenseVoucher[]    @relation("VoucherReversalChain")
+  lines             ExpenseLine[]
+  attachments       Attachment[]
+  checkEvents       ReceiptCheckEvent[]
+
+  @@map("expense_vouchers")
+}
+
+model ExpenseLine {
+  id               String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherId        String          @map("voucher_id") @db.Uuid
+  lineNo           Int             @map("line_no")
+  description      String
+  category         ExpenseCategory
+  amount           Decimal         @db.Decimal(14, 2)
+  otherExplanation String?         @map("other_explanation")
+
+  // ck_other_requires_explanation (BR-007) is hand-written SQL — Prisma has no CHECK
+  // constraint attribute.
+  voucher ExpenseVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+
+  @@map("expense_lines")
+}
+
+model VoucherCounter {
+  accountId String @map("account_id") @db.Uuid
+  year      Int
+  lastSeq   Int    @default(0) @map("last_seq")
+
+  account PettyCashAccount @relation(fields: [accountId], references: [id])
+
+  @@id([accountId, year])
+  @@map("voucher_counters")
+}
+
+model Attachment {
+  id         String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherId  String        @map("voucher_id") @db.Uuid
+  driver     StorageDriver
+  storageKey String?       @map("storage_key")
+  data       Bytes?
+  fileName   String        @map("file_name")
+  mimeType   String        @map("mime_type")
+  sizeBytes  Int           @map("size_bytes")
+  sha256     String
+  pageNo     Int           @default(1) @map("page_no")
+  uploadedBy String        @map("uploaded_by") @db.Uuid
+  uploadedAt DateTime      @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  deletedAt  DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  deletedBy  String?       @map("deleted_by") @db.Uuid
+  archiveId  String?       @map("archive_id") @db.Uuid
+
+  // ck_attachment_bytes_pair (driver POSTGRES_BYTEA => data IS NOT NULL; FILESYSTEM =>
+  // storage_key IS NOT NULL) is hand-written SQL — Prisma has no CHECK attribute.
+  // "hasBill=true implies >=1 non-deleted attachment" (FR-DOC-007/003) is service-level
+  // only, not a DB constraint: the voucher and its bill upload happen in two separate
+  // requests/transactions, so it can never be a same-transaction deferred check the way
+  // ck_voucher_totals is.
+  voucher  ExpenseVoucher  @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  uploader User            @relation("AttachmentUploadedBy", fields: [uploadedBy], references: [id])
+  deleter  User?           @relation("AttachmentDeletedBy", fields: [deletedBy], references: [id])
+  archive  MonthlyArchive? @relation(fields: [archiveId], references: [id])
+
+  @@index([voucherId])
+  @@index([sha256])
+  @@map("attachments")
+}
+
+model ReceiptCheckEvent {
+  id        String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherId String             @map("voucher_id") @db.Uuid
+  action    ReceiptCheckAction
+  actorId   String             @map("actor_id") @db.Uuid
+  actedAt   DateTime           @default(now()) @map("acted_at") @db.Timestamptz(6)
+  reason    String?
+
+  // ck_uncheck_requires_reason (action = 'UNCHECKED' => reason IS NOT NULL, FR-DOC-010) is
+  // hand-written SQL. This table is the history; expense_vouchers.checked_by/checked_at
+  // remain the current marker (Build Plan §2.3).
+  voucher ExpenseVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  actor   User           @relation(fields: [actorId], references: [id])
+
+  @@index([voucherId, actedAt])
+  @@map("receipt_check_events")
+}
+
+// Schema only this phase — no ArchivesModule service writes to this table yet (see
+// Phase 4 scope decision: real ZIP generation/confirm/eligible-deletion is deferred
+// until Month Close, Phase 7, exists to supply "a completed month" to archive). Exists
+// now purely so Attachment.archiveId has somewhere to point once that module is built.
+model MonthlyArchive {
+  id                 String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  scope              ArchiveScope
+  accountId          String?      @map("account_id") @db.Uuid
+  periodYear         Int          @map("period_year")
+  periodMonth        Int          @map("period_month")
+  fileCount          Int          @default(0) @map("file_count")
+  totalBytes         Int          @default(0) @map("total_bytes")
+  generatedBy        String       @map("generated_by") @db.Uuid
+  generatedAt        DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
+  downloadedAt       DateTime?    @map("downloaded_at") @db.Timestamptz(6)
+  confirmedBy        String?      @map("confirmed_by") @db.Uuid
+  confirmedAt        DateTime?    @map("confirmed_at") @db.Timestamptz(6)
+  deletionEligibleAt DateTime?    @map("deletion_eligible_at") @db.Timestamptz(6)
+  deletionExecutedAt DateTime?    @map("deletion_executed_at") @db.Timestamptz(6)
+  deletedBy          String?      @map("deleted_by") @db.Uuid
+
+  account     PettyCashAccount? @relation(fields: [accountId], references: [id])
+  generator   User              @relation("ArchiveGeneratedBy", fields: [generatedBy], references: [id])
+  confirmer   User?             @relation("ArchiveConfirmedBy", fields: [confirmedBy], references: [id])
+  deleter     User?             @relation("ArchiveDeletedBy", fields: [deletedBy], references: [id])
+  attachments Attachment[]
+
+  @@index([accountId, periodYear, periodMonth])
+  @@map("monthly_archives")
 }

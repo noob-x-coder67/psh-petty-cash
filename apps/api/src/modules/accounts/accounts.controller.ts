@@ -13,8 +13,11 @@ export class AccountsController {
   @Post(":unitId")
   @RequiresPermission("admin.manage_users_units")
   @RequiresUnitScope("param.unitId")
-  async enable(@Param("unitId") unitId: string): Promise<PettyCashAccount> {
-    return this.accountsService.enableAccount(unitId);
+  async enable(
+    @Param("unitId") unitId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PettyCashAccount> {
+    return this.accountsService.enableAccount(unitId, user);
   }
 
   @Get(":id")

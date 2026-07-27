@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import type { OrganizationalUnit, PettyCashAccount } from "@prisma/client";
+import type { OrganizationalUnit, PettyCashAccount, Prisma } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
+
+type Client = PrismaService | Prisma.TransactionClient;
 
 @Injectable()
 export class AccountsRepository {
@@ -18,7 +20,7 @@ export class AccountsRepository {
     return this.prisma.pettyCashAccount.findUnique({ where: { id } });
   }
 
-  async create(unitId: string): Promise<PettyCashAccount> {
-    return this.prisma.pettyCashAccount.create({ data: { unitId } });
+  async create(unitId: string, client: Client = this.prisma): Promise<PettyCashAccount> {
+    return client.pettyCashAccount.create({ data: { unitId } });
   }
 }

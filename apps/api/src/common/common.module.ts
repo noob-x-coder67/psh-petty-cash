@@ -2,6 +2,7 @@ import { Global, Module } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtModule } from "@nestjs/jwt";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { AuditLogRepository } from "./audit/audit-log.repository";
 import { AuthContextRepository } from "./auth/auth-context.repository";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
 import { RolesGuard } from "./guards/roles.guard";
@@ -28,11 +29,12 @@ if (!authSecret) {
     PrismaService,
     AuthContextRepository,
     LedgerPostingRepository,
+    AuditLogRepository,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: UnitScopeGuard },
   ],
-  exports: [PrismaService, AuthContextRepository, LedgerPostingRepository, JwtModule],
+  exports: [PrismaService, AuthContextRepository, LedgerPostingRepository, AuditLogRepository, JwtModule],
 })
 export class CommonModule {}
