@@ -149,6 +149,58 @@ async function main(): Promise<void> {
     fail("storage driver import outside apps/api/src/storage/** was NOT rejected.");
   }
 
+  // 5f. AC-018/Build Plan §4.6: packages/ui exports no component named Sidebar — a
+  // grep-based check (not an ESLint rule) since this is an export-naming invariant,
+  // not an import-boundary one.
+  const uiIndexSource = readFileSync(path.join(repoRoot, "packages/ui/src/index.ts"), "utf8");
+  if (/\bSidebar\b/.test(uiIndexSource)) {
+    fail("packages/ui/src/index.ts references something named Sidebar (AC-018).");
+  } else {
+    pass("packages/ui exports no component named Sidebar (AC-018).");
+  }
+
+  // 5g. AC-018/Build Plan §4.6: a fixed, full-height, side-anchored element (the
+  // permanent-sidebar shape) is rejected in apps/web.
+  if (
+    await ruleFired(
+      'export const fixture = "fixed inset-y-0 left-0 h-full w-64 border-r";\n',
+      "apps/web/src/__sidebar_shape_fixture__.ts",
+      "no-restricted-syntax",
+    )
+  ) {
+    pass("fixed full-height left/right-anchored className in apps/web is rejected (AC-018).");
+  } else {
+    fail("fixed full-height left/right-anchored className in apps/web was NOT rejected.");
+  }
+
+  // 5g2. packages/ui/src/primitives/sheet.tsx's own equivalent classes are NOT rejected
+  // — the rule is scoped to apps/web only, since Sheet is a legitimate temporary drawer.
+  if (
+    await ruleFired(
+      'export const fixture = "fixed inset-y-0 right-0 h-full w-full max-w-md border-l";\n',
+      "packages/ui/src/primitives/__sheet_shape_fixture__.ts",
+      "no-restricted-syntax",
+    )
+  ) {
+    fail("packages/ui was rejected for the same className Sheet legitimately uses.");
+  } else {
+    pass("packages/ui remains allowed to use fixed inset-y-0 side-anchoring (Sheet's own shape).");
+  }
+
+  // 5h. Rule 14 / Build Plan §4.6: toFixed() is banned in apps/web and packages/ui —
+  // money display must go through <Money />.
+  if (
+    await ruleFired(
+      "export const amount = (1234.5).toFixed(2);\n",
+      "apps/web/src/__tofixed_fixture__.ts",
+      "no-restricted-syntax",
+    )
+  ) {
+    pass("toFixed() in apps/web is rejected (rule 14).");
+  } else {
+    fail("toFixed() in apps/web was NOT rejected.");
+  }
+
   // 6. packages/contracts has zero runtime dependencies beyond zod.
   const contractsPkg = JSON.parse(
     readFileSync(path.join(repoRoot, "packages/contracts/package.json"), "utf8"),

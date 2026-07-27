@@ -142,6 +142,47 @@ export default tseslint.config(
     },
   },
   {
+    // apps/web-only checks. Both live in one no-restricted-syntax array deliberately —
+    // a second block setting the same rule key for overlapping files would replace this
+    // one wholesale rather than merge with it.
+    // 1. AC-018/Build Plan §4.6: bans a fixed, full-height, side-anchored element in
+    //    apps/web itself — the permanent-sidebar shape. packages/ui/src/primitives/
+    //    sheet.tsx legitimately uses `fixed inset-y-0 right-0` for its temporary,
+    //    dismissible detail drawer, but that file lives in packages/ui, outside this
+    //    rule's scope — apps/web is only ever meant to consume <Sheet />, never
+    //    hand-roll this positioning itself.
+    // 2. Rule 14: never toFixed() for money display — use <Money /> from packages/ui.
+    files: ["apps/web/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/^(?=.*\\bfixed\\b)(?=.*\\binset-y-0\\b)(?=.*\\b(left-0|right-0)\\b).*/]",
+          message:
+            "No fixed, full-height, side-anchored element in apps/web — that's the permanent-sidebar shape AC-018 bans. Use <Sheet /> from @psh/ui for temporary drawers.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toFixed']",
+          message: "Never use toFixed() for money display — use <Money /> from packages/ui (rule 14).",
+        },
+      ],
+    },
+  },
+  {
+    // packages/ui gets the toFixed ban too, but not the sidebar-position one — that
+    // primitive (Sheet) legitimately lives here.
+    files: ["packages/ui/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.property.name='toFixed']",
+          message: "Never use toFixed() for money display — use <Money /> from packages/ui (rule 14).",
+        },
+      ],
+    },
+  },
+  {
     rules: {
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
     },
