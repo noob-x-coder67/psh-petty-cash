@@ -7,3 +7,6 @@ dist
 .turbo
 *.tsbuildinfo
 .DS_Store
+storybook-static
+var
+.claude/

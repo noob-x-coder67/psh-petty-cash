@@ -1,0 +1,65 @@
+/*
+ * Aurora Ledger design tokens (SRS §11.3 "Visual Personality", §11.4 "Design Tokens").
+ * Light-first only — dark theme is explicitly deferred until after core UAT (§11.4's
+ * own "Theme" row), so no dark-mode block exists here yet.
+ *
+ * Consumed via Tailwind v4's CSS-first `@theme` — every custom property below becomes
+ * a utility class (e.g. --color-royal-600 -> bg-royal-600/text-royal-600/border-royal-600,
+ * --radius-card -> rounded-card, --shadow-2 -> shadow-2, --font-sans -> font-sans).
+ */
+@theme {
+  /* Brand — "deep midnight and royal blue establish institutional authority" */
+  --color-midnight-950: hsl(222 47% 6%);
+  --color-midnight-900: hsl(222 44% 11%);
+  --color-midnight-700: hsl(222 35% 24%);
+  --color-royal-600: hsl(226 83% 53%);
+  --color-royal-500: hsl(226 83% 60%);
+  --color-royal-100: hsl(226 90% 96%);
+
+  /* Semantic accents, always paired with text/icon meaning, never color alone.
+     -500 shades are tuned to clear 4.5:1 (WCAG AA, NFR-005) as text on white/surface-1
+     — confirmed with a real axe-core run against the five core screens, not just
+     computed; emerald-500 and coral-500 were both originally too light and failed. */
+  --color-cyan-500: hsl(189 85% 42%); /* live/healthy movement */
+  --color-emerald-500: hsl(152 60% 30%); /* live/healthy movement */
+  --color-amber-500: hsl(38 92% 32%); /* pending review / compliance attention */
+  --color-amber-100: hsl(38 92% 94%);
+  --color-coral-500: hsl(6 78% 45%); /* negative balance / exceptional risk */
+  --color-coral-100: hsl(6 90% 95%);
+  --color-violet-500: hsl(262 60% 56%); /* analytical/reporting workspaces */
+  --color-violet-100: hsl(262 65% 96%);
+
+  /* Neutral surfaces & ink — "low-contrast cool gray, strengthened on focus" */
+  --color-surface-0: hsl(220 25% 99%);
+  --color-surface-1: hsl(0 0% 100%);
+  --color-border: hsl(220 16% 89%);
+  --color-border-strong: hsl(220 16% 78%);
+  --color-ink: hsl(222 47% 11%);
+  --color-ink-muted: hsl(220 9% 42%);
+
+  /* Radii — SRS §11.4: 10px controls, 16px cards, 24px feature surfaces */
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-feature: 1.5rem;
+
+  /* Elevation — "subtle 1-3 level shadows; no heavy floating chrome" */
+  --shadow-1: 0 1px 2px hsl(222 40% 15% / 0.06), 0 1px 1px hsl(222 40% 15% / 0.04);
+  --shadow-2: 0 4px 10px hsl(222 40% 15% / 0.08), 0 2px 4px hsl(222 40% 15% / 0.05);
+  --shadow-3: 0 12px 28px hsl(222 40% 15% / 0.12), 0 4px 10px hsl(222 40% 15% / 0.06);
+
+  /* Typography — "Aptos/Inter-style sans"; the actual Inter font is loaded by
+     apps/web via next/font and bound to --font-sans-override at the document root. */
+  --font-sans: var(--font-sans-override), ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* Focus ring (2px accessible accent outline, SRS §11.4) — not a Tailwind theme
+   namespace, applied directly. */
+:root {
+  --focus-ring-width: 2px;
+  --focus-ring-color: var(--color-royal-600);
+}
+
+.psh-focus-ring:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 2px;
+}

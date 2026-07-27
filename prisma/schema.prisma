@@ -1,8 +1,637 @@
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  directUrl  = env("DIRECT_DATABASE_URL")
+  extensions = [citext]
 }
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+enum UnitType {
+  HEAD_OFFICE
+  CENTER
+  PROJECT
+  PROJECT_LOCATION
+  SERVICE
+
+  @@map("unit_type")
+}
+
+enum LedgerEntryType {
+  OPENING
+  ALLOCATION
+  REPLENISHMENT
+  EXPENSE
+  CASH_RETURN
+  ADJUSTMENT_POSITIVE
+  ADJUSTMENT_NEGATIVE
+  REVERSAL
+
+  @@map("ledger_entry_type")
+}
+
+enum ExpenseCategory {
+  BUILDING
+  VEHICLE
+  OTHER
+
+  @@map("expense_category")
+}
+
+// NOT an approval workflow (BR-001) — no third value, ever.
+enum VoucherState {
+  ACTIVE
+  REVERSED
+
+  @@map("voucher_state")
+}
+
+enum StorageDriver {
+  POSTGRES_BYTEA
+  FILESYSTEM
+
+  @@map("storage_driver")
+}
+
+enum ReceiptCheckAction {
+  CHECKED
+  UNCHECKED
+
+  @@map("receipt_check_action")
+}
+
+enum ArchiveScope {
+  UNIT
+  CONSOLIDATED
+
+  @@map("archive_scope")
+}
+
+enum ReportExportFormat {
+  PDF
+  EXCEL
+  CSV
+
+  @@map("report_export_format")
+}
+
+enum ReportExportStatus {
+  PENDING
+  READY
+  FAILED
+
+  @@map("report_export_status")
+}
+
+enum RoleKey {
+  SUPER_ADMIN
+  FINANCE_MANAGER
+  FINANCE_OFFICER
+  UNIT_USER
+  UNIT_INCHARGE
+  AUDITOR
+  SUPPORT
+
+  @@map("role_key")
+}
+
+model OrganizationalUnit {
+  id               String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  code             String   @unique
+  name             String
+  type             UnitType
+  city             String?
+  parentId         String?  @map("parent_id") @db.Uuid
+  pettyCashEnabled Boolean  @default(false) @map("petty_cash_enabled")
+  isActive         Boolean  @default(true) @map("is_active")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  parent   OrganizationalUnit?  @relation("UnitHierarchy", fields: [parentId], references: [id])
+  children OrganizationalUnit[] @relation("UnitHierarchy")
+
+  userUnitAccess   UserUnitAccess[]
+  pettyCashAccount PettyCashAccount?
+
+  // uq_unit_id_pce: no consumer yet in this phase — Phase 2's petty_cash_accounts
+  // composite FK (PSH-ISB's structural exclusion) references this pair.
+  @@unique([id, pettyCashEnabled], map: "uq_unit_id_pce")
+  @@map("organizational_units")
+}
+
+model User {
+  id                 String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  email              String    @unique @db.Citext
+  username           String    @unique
+  passwordHash       String    @map("password_hash")
+  fullName           String    @map("full_name")
+  isActive           Boolean   @default(true) @map("is_active")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until") @db.Timestamptz(6)
+  lastLoginAt        DateTime? @map("last_login_at") @db.Timestamptz(6)
+  totpSecretEnc      String?   @map("totp_secret_enc")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userRoles               UserRole[]
+  unitAccess              UserUnitAccess[]    @relation("AccessGrantee")
+  grantedAccess           UserUnitAccess[]    @relation("AccessGrantor")
+  sessions                Session[]
+  postedLedgerEntries     CashLedgerEntry[]
+  issuedAllocations       CashAllocation[]    @relation("AllocationIssuer")
+  confirmedAllocations    CashAllocation[]    @relation("AllocationConfirmer")
+  enteredVouchers         ExpenseVoucher[]    @relation("VoucherEnteredBy")
+  checkedVouchers         ExpenseVoucher[]    @relation("VoucherCheckedBy")
+  uploadedAttachments     Attachment[]        @relation("AttachmentUploadedBy")
+  deletedAttachments      Attachment[]        @relation("AttachmentDeletedBy")
+  receiptCheckEvents      ReceiptCheckEvent[]
+  generatedArchives       MonthlyArchive[]    @relation("ArchiveGeneratedBy")
+  confirmedArchives       MonthlyArchive[]    @relation("ArchiveConfirmedBy")
+  deletedArchives         MonthlyArchive[]    @relation("ArchiveDeletedBy")
+  reportExports           ReportExport[]
+  reportPresets           ReportPreset[]
+  countedClosings         MonthlyClosing[]    @relation("ClosingCountedBy")
+  closedClosings          MonthlyClosing[]    @relation("ClosingClosedBy")
+  reopenedClosings        MonthlyClosing[]    @relation("ClosingReopenedBy")
+  issuedReplenishments    Replenishment[]     @relation("ReplenishmentIssuer")
+  exceptionReplenishments Replenishment[]     @relation("ReplenishmentException")
+  confirmedReplenishments Replenishment[]     @relation("ReplenishmentConfirmer")
+
+  @@map("users")
+}
+
+model Session {
+  id               String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  familyId         String    @map("family_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  lastUsedAt       DateTime? @map("last_used_at") @db.Timestamptz(6)
+  ipAddress        String?   @map("ip_address")
+  userAgent        String?   @map("user_agent")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([familyId])
+  @@map("sessions")
+}
+
+model Role {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  key       RoleKey  @unique
+  name      String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id          String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  key         String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id])
+  permission Permission @relation(fields: [permissionId], references: [id])
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id])
+  role Role @relation(fields: [roleId], references: [id])
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model UserUnitAccess {
+  userId    String   @map("user_id") @db.Uuid
+  unitId    String   @map("unit_id") @db.Uuid
+  grantedBy String   @map("granted_by") @db.Uuid
+  grantedAt DateTime @default(now()) @map("granted_at") @db.Timestamptz(6)
+
+  user    User               @relation("AccessGrantee", fields: [userId], references: [id])
+  grantor User               @relation("AccessGrantor", fields: [grantedBy], references: [id])
+  unit    OrganizationalUnit @relation(fields: [unitId], references: [id])
+
+  @@id([userId, unitId])
+  @@map("user_unit_access")
+}
+
+model PettyCashAccount {
+  id                  String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  unitId              String    @unique @map("unit_id") @db.Uuid
+  approvedFloat       Decimal   @default(0) @map("approved_float") @db.Decimal(14, 2)
+  lowBalanceThreshold Decimal?  @map("low_balance_threshold") @db.Decimal(14, 2)
+  cachedBalance       Decimal   @default(0) @map("cached_balance") @db.Decimal(14, 2)
+  cachedBalanceAt     DateTime? @map("cached_balance_at") @db.Timestamptz(6)
+  isActive            Boolean   @default(true) @map("is_active")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // unit_petty_cash_enabled (GENERATED ALWAYS AS (true) STORED) and the composite FK it
+  // backs (fk_account_requires_enabled_unit — PSH-ISB's third and final structural
+  // defense layer, BR-016/R-11) are hand-written SQL in the migration, deliberately not
+  // modeled here (tried Prisma's Unsupported() type — it makes migrate-diff loosen the
+  // NOT NULL/generated-ness instead of proposing a clean drop, which is worse, not
+  // better). CONSEQUENCE: any future auto-generated migration touching this table WILL
+  // propose dropping this column and/or fk_account_requires_enabled_unit — that diff
+  // must be hand-stripped before applying, same create-only-then-review discipline as
+  // every migration in this project, just with this specific object named here as a
+  // flag for whoever's reviewing it.
+  unit            OrganizationalUnit @relation(fields: [unitId], references: [id])
+  ledgerEntries   CashLedgerEntry[]
+  allocations     CashAllocation[]
+  vouchers        ExpenseVoucher[]
+  counters        VoucherCounter[]
+  archives        MonthlyArchive[]
+  monthlyClosings MonthlyClosing[]
+  replenishments  Replenishment[]
+
+  @@map("petty_cash_accounts")
+}
+
+model CashLedgerEntry {
+  id              String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId       String          @map("account_id") @db.Uuid
+  entryType       LedgerEntryType @map("entry_type")
+  direction       Int             @db.SmallInt
+  amount          Decimal         @db.Decimal(14, 2)
+  effectiveDate   DateTime        @map("effective_date") @db.Date
+  sourceTable     String?         @map("source_table")
+  sourceId        String?         @map("source_id") @db.Uuid
+  reversesEntryId String?         @map("reverses_entry_id") @db.Uuid
+  balanceAfter    Decimal         @map("balance_after") @db.Decimal(14, 2)
+  createdBy       String          @map("created_by") @db.Uuid
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // signed_amount / period_year / period_month are GENERATED ALWAYS AS columns, hand-
+  // written in the migration SQL and deliberately not modeled here — see the note on
+  // PettyCashAccount.unit (same Unsupported() trade-off applies; not repeated per field).
+  // Any future auto-generated migration touching this table will propose dropping
+  // these three columns and the ix_ledger_* indexes below — hand-strip before applying.
+  account       PettyCashAccount  @relation(fields: [accountId], references: [id])
+  creator       User              @relation(fields: [createdBy], references: [id])
+  reversesEntry CashLedgerEntry?  @relation("ReversalChain", fields: [reversesEntryId], references: [id])
+  reversedBy    CashLedgerEntry[] @relation("ReversalChain")
+
+  @@map("cash_ledger_entries")
+}
+
+model CashAllocation {
+  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId       String    @map("account_id") @db.Uuid
+  amount          Decimal   @db.Decimal(14, 2)
+  issueDate       DateTime  @map("issue_date") @db.Date
+  referenceNo     String?   @map("reference_no")
+  paymentMode     String?   @map("payment_mode")
+  remarks         String?
+  issuedBy        String    @map("issued_by") @db.Uuid
+  confirmedAmount Decimal?  @map("confirmed_amount") @db.Decimal(14, 2)
+  confirmedDate   DateTime? @map("confirmed_date") @db.Date
+  confirmedBy     String?   @map("confirmed_by") @db.Uuid
+  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  idempotencyKey  String    @unique @map("idempotency_key")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account   PettyCashAccount @relation(fields: [accountId], references: [id])
+  issuer    User             @relation("AllocationIssuer", fields: [issuedBy], references: [id])
+  confirmer User?            @relation("AllocationConfirmer", fields: [confirmedBy], references: [id])
+
+  @@map("cash_allocations")
+}
+
+enum MonthlyClosingStatus {
+  OPEN
+  CLOSED
+
+  @@map("monthly_closing_status")
+}
+
+// FR-CLS-001..009. §14.2 also lists a separate `three_month_compliance` entity
+// ("Derived or cached eligibility state") — the SRS itself frames that as either
+// derived or cached, and since compliance only ever needs to look at the 3 rows
+// immediately preceding a target month, it's computed on demand from this table
+// (reports.rules.ts-style pure function) rather than a second cached table that could
+// drift from it. See replenishments.rules.ts.
+model MonthlyClosing {
+  id                String               @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId         String               @map("account_id") @db.Uuid
+  periodYear        Int                  @map("period_year")
+  periodMonth       Int                  @map("period_month")
+  physicalCashCount Decimal?             @map("physical_cash_count") @db.Decimal(14, 2)
+  countedBy         String?              @map("counted_by") @db.Uuid
+  countedAt         DateTime?            @map("counted_at") @db.Timestamptz(6)
+  expectedBalance   Decimal?             @map("expected_balance") @db.Decimal(14, 2)
+  variance          Decimal?             @db.Decimal(14, 2)
+  remarks           String?
+  status            MonthlyClosingStatus @default(OPEN)
+  closedBy          String?              @map("closed_by") @db.Uuid
+  closedAt          DateTime?            @map("closed_at") @db.Timestamptz(6)
+  reopenedBy        String?              @map("reopened_by") @db.Uuid
+  reopenedAt        DateTime?            @map("reopened_at") @db.Timestamptz(6)
+  reopenReason      String?              @map("reopen_reason")
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  account  PettyCashAccount @relation(fields: [accountId], references: [id])
+  counter  User?            @relation("ClosingCountedBy", fields: [countedBy], references: [id])
+  closer   User?            @relation("ClosingClosedBy", fields: [closedBy], references: [id])
+  reopener User?            @relation("ClosingReopenedBy", fields: [reopenedBy], references: [id])
+
+  // §14.3 "One monthly closing per account/month" — enforced here, not just in the
+  // service's upsert logic.
+  @@unique([accountId, periodYear, periodMonth], map: "uq_closing_account_period")
+  @@map("monthly_closings")
+}
+
+// FR-REP-001..007. Mirrors CashAllocation's create-then-confirm shape deliberately
+// (§14.4's balance formula only counts "Confirmed... Replenishments") — the ledger only
+// ever posts on confirmation, same as an allocation (FR-CASH-003).
+model Replenishment {
+  id              String    @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId       String    @map("account_id") @db.Uuid
+  amount          Decimal   @db.Decimal(14, 2)
+  issueDate       DateTime  @map("issue_date") @db.Date
+  referenceNo     String?   @map("reference_no")
+  paymentMode     String?   @map("payment_mode")
+  remarks         String?
+  // Snapshot of the three-month compliance evaluation at the moment this record was
+  // created — the underlying monthly_closings rows can themselves change later (a month
+  // can be reopened), but what mattered for THIS replenishment is fixed at creation.
+  isCompliant     Boolean   @map("is_compliant")
+  exceptionReason String?   @map("exception_reason")
+  exceptionBy     String?   @map("exception_by") @db.Uuid
+  exceptionAt     DateTime? @map("exception_at") @db.Timestamptz(6)
+  issuedBy        String    @map("issued_by") @db.Uuid
+  confirmedAmount Decimal?  @map("confirmed_amount") @db.Decimal(14, 2)
+  confirmedDate   DateTime? @map("confirmed_date") @db.Date
+  confirmedBy     String?   @map("confirmed_by") @db.Uuid
+  confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  idempotencyKey  String    @unique @map("idempotency_key")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account        PettyCashAccount @relation(fields: [accountId], references: [id])
+  issuer         User             @relation("ReplenishmentIssuer", fields: [issuedBy], references: [id])
+  exceptionActor User?            @relation("ReplenishmentException", fields: [exceptionBy], references: [id])
+  confirmer      User?            @relation("ReplenishmentConfirmer", fields: [confirmedBy], references: [id])
+
+  // FR-REP-006: prevent duplicate posting of the same reference. A plain Prisma
+  // @@unique is sufficient — Postgres treats every NULL as distinct, so accounts with
+  // no reference_no supplied are never falsely blocked from a second replenishment.
+  @@unique([accountId, referenceNo], map: "uq_replenishment_account_reference")
+  @@map("replenishments")
+}
+
+model AuditLog {
+  id         String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorRole  String?  @map("actor_role")
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String   @map("entity_id") @db.Uuid
+  unitId     String?  @map("unit_id") @db.Uuid
+  occurredAt DateTime @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  requestId  String?  @map("request_id")
+  reason     String?
+  before     Json?
+  after      Json?
+  diff       Json?
+
+  // No FK to users.id deliberately — an audit row must remain writable (and legible)
+  // even for actors that no longer exist or attempts against unknown/deleted entities.
+  @@index([entityType, entityId, occurredAt(sort: Desc)], map: "ix_audit_entity")
+  @@index([actorId, occurredAt(sort: Desc)], map: "ix_audit_actor")
+  @@map("audit_logs")
+}
+
+model ExpenseVoucher {
+  id                  String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherNo           String       @unique @map("voucher_no")
+  accountId           String       @map("account_id") @db.Uuid
+  expenseDate         DateTime     @map("expense_date") @db.Date
+  billDate            DateTime?    @map("bill_date") @db.Date
+  vendorName          String       @map("vendor_name")
+  vendorBillNo        String?      @map("vendor_bill_no")
+  justification       String
+  billTotal           Decimal      @map("bill_total") @db.Decimal(14, 2)
+  linesTotal          Decimal      @default(0) @map("lines_total") @db.Decimal(14, 2)
+  state               VoucherState @default(ACTIVE)
+  hasBill             Boolean      @default(false) @map("has_bill")
+  missingBillReason   String?      @map("missing_bill_reason")
+  checkedBy           String?      @map("checked_by") @db.Uuid
+  checkedAt           DateTime?    @map("checked_at") @db.Timestamptz(6)
+  isBackdated         Boolean      @default(false) @map("is_backdated")
+  balanceAfter        Decimal?     @map("balance_after") @db.Decimal(14, 2)
+  enteredBy           String       @map("entered_by") @db.Uuid
+  enteredAt           DateTime     @default(now()) @map("entered_at") @db.Timestamptz(6)
+  reversedByVoucherId String?      @map("reversed_by_voucher_id") @db.Uuid
+
+  // lines_total is trigger-maintained (recomputed from expense_lines on insert/update/
+  // delete — a generated column can't aggregate across rows in another table) and
+  // ck_voucher_totals is a DEFERRABLE INITIALLY DEFERRED CHECK the service forces
+  // IMMEDIATE after inserting lines (BR-005, enforced twice: service + trigger/CHECK).
+  // period_year/period_month are GENERATED ALWAYS AS from expense_date, same pattern as
+  // cash_ledger_entries. All hand-written in the migration, not modeled here — any
+  // future auto-generated migration touching this table will propose dropping the
+  // trigger's effects and these generated columns; hand-strip before applying.
+  account           PettyCashAccount    @relation(fields: [accountId], references: [id])
+  enteredByUser     User                @relation("VoucherEnteredBy", fields: [enteredBy], references: [id])
+  checkedByUser     User?               @relation("VoucherCheckedBy", fields: [checkedBy], references: [id])
+  reversedByVoucher ExpenseVoucher?     @relation("VoucherReversalChain", fields: [reversedByVoucherId], references: [id])
+  reversalOf        ExpenseVoucher[]    @relation("VoucherReversalChain")
+  lines             ExpenseLine[]
+  attachments       Attachment[]
+  checkEvents       ReceiptCheckEvent[]
+
+  @@map("expense_vouchers")
+}
+
+model ExpenseLine {
+  id               String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherId        String          @map("voucher_id") @db.Uuid
+  lineNo           Int             @map("line_no")
+  description      String
+  category         ExpenseCategory
+  amount           Decimal         @db.Decimal(14, 2)
+  otherExplanation String?         @map("other_explanation")
+
+  // ck_other_requires_explanation (BR-007) is hand-written SQL — Prisma has no CHECK
+  // constraint attribute.
+  voucher ExpenseVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+
+  @@map("expense_lines")
+}
+
+model VoucherCounter {
+  accountId String @map("account_id") @db.Uuid
+  year      Int
+  lastSeq   Int    @default(0) @map("last_seq")
+
+  account PettyCashAccount @relation(fields: [accountId], references: [id])
+
+  @@id([accountId, year])
+  @@map("voucher_counters")
+}
+
+model Attachment {
+  id         String        @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherId  String        @map("voucher_id") @db.Uuid
+  driver     StorageDriver
+  storageKey String?       @map("storage_key")
+  data       Bytes?
+  fileName   String        @map("file_name")
+  mimeType   String        @map("mime_type")
+  sizeBytes  Int           @map("size_bytes")
+  sha256     String
+  pageNo     Int           @default(1) @map("page_no")
+  uploadedBy String        @map("uploaded_by") @db.Uuid
+  uploadedAt DateTime      @default(now()) @map("uploaded_at") @db.Timestamptz(6)
+  deletedAt  DateTime?     @map("deleted_at") @db.Timestamptz(6)
+  deletedBy  String?       @map("deleted_by") @db.Uuid
+  archiveId  String?       @map("archive_id") @db.Uuid
+
+  // ck_attachment_bytes_pair (driver POSTGRES_BYTEA => data IS NOT NULL; FILESYSTEM =>
+  // storage_key IS NOT NULL) is hand-written SQL — Prisma has no CHECK attribute.
+  // "hasBill=true implies >=1 non-deleted attachment" (FR-DOC-007/003) is service-level
+  // only, not a DB constraint: the voucher and its bill upload happen in two separate
+  // requests/transactions, so it can never be a same-transaction deferred check the way
+  // ck_voucher_totals is.
+  voucher  ExpenseVoucher  @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  uploader User            @relation("AttachmentUploadedBy", fields: [uploadedBy], references: [id])
+  deleter  User?           @relation("AttachmentDeletedBy", fields: [deletedBy], references: [id])
+  archive  MonthlyArchive? @relation(fields: [archiveId], references: [id])
+
+  @@index([voucherId])
+  @@index([sha256])
+  @@map("attachments")
+}
+
+model ReceiptCheckEvent {
+  id        String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherId String             @map("voucher_id") @db.Uuid
+  action    ReceiptCheckAction
+  actorId   String             @map("actor_id") @db.Uuid
+  actedAt   DateTime           @default(now()) @map("acted_at") @db.Timestamptz(6)
+  reason    String?
+
+  // ck_uncheck_requires_reason (action = 'UNCHECKED' => reason IS NOT NULL, FR-DOC-010) is
+  // hand-written SQL. This table is the history; expense_vouchers.checked_by/checked_at
+  // remain the current marker (Build Plan §2.3).
+  voucher ExpenseVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  actor   User           @relation(fields: [actorId], references: [id])
+
+  @@index([voucherId, actedAt])
+  @@map("receipt_check_events")
+}
+
+// Schema only this phase — no ArchivesModule service writes to this table yet (see
+// Phase 4 scope decision: real ZIP generation/confirm/eligible-deletion is deferred
+// until Month Close, Phase 7, exists to supply "a completed month" to archive). Exists
+// now purely so Attachment.archiveId has somewhere to point once that module is built.
+model MonthlyArchive {
+  id                 String       @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  scope              ArchiveScope
+  accountId          String?      @map("account_id") @db.Uuid
+  periodYear         Int          @map("period_year")
+  periodMonth        Int          @map("period_month")
+  fileCount          Int          @default(0) @map("file_count")
+  totalBytes         Int          @default(0) @map("total_bytes")
+  generatedBy        String       @map("generated_by") @db.Uuid
+  generatedAt        DateTime     @default(now()) @map("generated_at") @db.Timestamptz(6)
+  downloadedAt       DateTime?    @map("downloaded_at") @db.Timestamptz(6)
+  confirmedBy        String?      @map("confirmed_by") @db.Uuid
+  confirmedAt        DateTime?    @map("confirmed_at") @db.Timestamptz(6)
+  deletionEligibleAt DateTime?    @map("deletion_eligible_at") @db.Timestamptz(6)
+  deletionExecutedAt DateTime?    @map("deletion_executed_at") @db.Timestamptz(6)
+  deletedBy          String?      @map("deleted_by") @db.Uuid
+
+  account     PettyCashAccount? @relation(fields: [accountId], references: [id])
+  generator   User              @relation("ArchiveGeneratedBy", fields: [generatedBy], references: [id])
+  confirmer   User?             @relation("ArchiveConfirmedBy", fields: [confirmedBy], references: [id])
+  deleter     User?             @relation("ArchiveDeletedBy", fields: [deletedBy], references: [id])
+  attachments Attachment[]
+
+  @@index([accountId, periodYear, periodMonth])
+  @@map("monthly_archives")
+}
+
+// §14.2/Build Plan §2.3: dedicated export-audit table, distinct from audit_logs — "who
+// extracted what, with which filters" (§6.8) needs row_count/format/file_ref/
+// downloaded_at fields that don't fit audit_logs's generic before/after JSON shape. A
+// generic audit_logs row is written too (action REPORT_EXPORT), same dual-write pattern
+// as every other mutation this session — report_exports isn't a substitute for it.
+model ReportExport {
+  id           String             @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  reportKey    String             @map("report_key")
+  filters      Json
+  format       ReportExportFormat
+  status       ReportExportStatus @default(PENDING)
+  rowCount     Int?               @map("row_count")
+  generatedBy  String             @map("generated_by") @db.Uuid
+  generatedAt  DateTime           @default(now()) @map("generated_at") @db.Timestamptz(6)
+  downloadedAt DateTime?          @map("downloaded_at") @db.Timestamptz(6)
+
+  // Populated only once status flips to READY — same StorageLocator shape as
+  // Attachment (driver/storageKey/data), through the same AttachmentStorage interface
+  // (rule 18); fileName/mimeType/sizeBytes mirror Attachment's own metadata columns.
+  // errorMessage is populated only on FAILED, surfaced to the poller so a stuck export
+  // has a reason attached rather than just an opaque terminal state.
+  driver       StorageDriver? @map("driver")
+  storageKey   String?        @map("storage_key")
+  data         Bytes?
+  fileName     String?        @map("file_name")
+  mimeType     String?        @map("mime_type")
+  sizeBytes    Int?           @map("size_bytes")
+  errorMessage String?        @map("error_message")
+
+  generator User @relation(fields: [generatedBy], references: [id])
+
+  @@index([reportKey, generatedAt(sort: Desc)], map: "ix_report_exports_key")
+  @@map("report_exports")
+}
+
+// SRS §12.8 "Saved presets per Finance user" — no schema was specified anywhere in the
+// SRS/Build Plan for this; shape is inferred from report_exports' own filters-jsonb
+// column (documented as a gap in the Phase 6 plan, not a spec lookup).
+model ReportPreset {
+  id        String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  reportKey String   @map("report_key")
+  name      String
+  filters   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, reportKey, name], map: "uq_preset_user_report_name")
+  @@map("report_presets")
 }

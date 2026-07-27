@@ -81,17 +81,124 @@ async function main(): Promise<void> {
     pass("apps/web -> packages/contracts import remains allowed.");
   }
 
-  // 5. Only *.repository.ts (and prisma/) may import PrismaClient.
+  // 5. Only *.repository.ts, prisma.service.ts (and prisma/) may import PrismaClient as a value.
   if (
     await ruleFired(
       'import { PrismaClient } from "@prisma/client";\nexport const client = new PrismaClient();\n',
       "apps/api/src/__prisma_fixture__.ts",
+      "@typescript-eslint/no-restricted-imports",
+    )
+  ) {
+    pass("PrismaClient value import outside *.repository.ts is rejected.");
+  } else {
+    fail("PrismaClient value import outside *.repository.ts was NOT rejected.");
+  }
+
+  // 5b. A type-only import from @prisma/client (e.g. RoleKey) is fine anywhere — only
+  //     the runtime value is restricted.
+  if (
+    await ruleFired(
+      'import type { RoleKey } from "@prisma/client";\nexport type Fixture = RoleKey;\n',
+      "apps/api/src/__prisma_type_fixture__.ts",
+      "@typescript-eslint/no-restricted-imports",
+    )
+  ) {
+    fail("a type-only @prisma/client import was rejected, but type imports are allowed.");
+  } else {
+    pass("type-only @prisma/client imports remain allowed outside *.repository.ts.");
+  }
+
+  // 5c. prisma.service.ts itself is the one designated exception besides *.repository.ts.
+  if (
+    await ruleFired(
+      'import { PrismaClient } from "@prisma/client";\nexport class Fixture extends PrismaClient {}\n',
+      "apps/api/src/common/prisma/prisma.service.ts",
+      "@typescript-eslint/no-restricted-imports",
+    )
+  ) {
+    fail("prisma.service.ts was rejected, but it is the designated PrismaClient wrapper.");
+  } else {
+    pass("prisma.service.ts remains allowed to import PrismaClient.");
+  }
+
+  // 5d. Prisma.Decimal (money arithmetic, rule 14 — never float) is a value import from
+  // @prisma/client too, but it is not database access — only the PrismaClient class
+  // itself is restricted (importNames), so this must remain allowed everywhere.
+  if (
+    await ruleFired(
+      'import { Prisma } from "@prisma/client";\nexport const amount = new Prisma.Decimal("1.00");\n',
+      "apps/api/src/common/ledger/__decimal_fixture__.ts",
+      "@typescript-eslint/no-restricted-imports",
+    )
+  ) {
+    fail("Prisma.Decimal was rejected outside *.repository.ts, but it is not database access.");
+  } else {
+    pass("Prisma.Decimal remains usable anywhere — only PrismaClient itself is restricted.");
+  }
+
+  // 5e. Rule 18: only apps/api/src/storage/** may reference a driver by name.
+  if (
+    await ruleFired(
+      'import { FilesystemStorageDriver } from "../../storage/filesystem.driver";\nexport const fixture = FilesystemStorageDriver;\n',
+      "apps/api/src/modules/__storage_fixture__/x.service.ts",
       "no-restricted-imports",
     )
   ) {
-    pass("PrismaClient import outside *.repository.ts is rejected.");
+    pass("storage driver import outside apps/api/src/storage/** is rejected.");
   } else {
-    fail("PrismaClient import outside *.repository.ts was NOT rejected.");
+    fail("storage driver import outside apps/api/src/storage/** was NOT rejected.");
+  }
+
+  // 5f. AC-018/Build Plan §4.6: packages/ui exports no component named Sidebar — a
+  // grep-based check (not an ESLint rule) since this is an export-naming invariant,
+  // not an import-boundary one.
+  const uiIndexSource = readFileSync(path.join(repoRoot, "packages/ui/src/index.ts"), "utf8");
+  if (/\bSidebar\b/.test(uiIndexSource)) {
+    fail("packages/ui/src/index.ts references something named Sidebar (AC-018).");
+  } else {
+    pass("packages/ui exports no component named Sidebar (AC-018).");
+  }
+
+  // 5g. AC-018/Build Plan §4.6: a fixed, full-height, side-anchored element (the
+  // permanent-sidebar shape) is rejected in apps/web.
+  if (
+    await ruleFired(
+      'export const fixture = "fixed inset-y-0 left-0 h-full w-64 border-r";\n',
+      "apps/web/src/__sidebar_shape_fixture__.ts",
+      "no-restricted-syntax",
+    )
+  ) {
+    pass("fixed full-height left/right-anchored className in apps/web is rejected (AC-018).");
+  } else {
+    fail("fixed full-height left/right-anchored className in apps/web was NOT rejected.");
+  }
+
+  // 5g2. packages/ui/src/primitives/sheet.tsx's own equivalent classes are NOT rejected
+  // — the rule is scoped to apps/web only, since Sheet is a legitimate temporary drawer.
+  if (
+    await ruleFired(
+      'export const fixture = "fixed inset-y-0 right-0 h-full w-full max-w-md border-l";\n',
+      "packages/ui/src/primitives/__sheet_shape_fixture__.ts",
+      "no-restricted-syntax",
+    )
+  ) {
+    fail("packages/ui was rejected for the same className Sheet legitimately uses.");
+  } else {
+    pass("packages/ui remains allowed to use fixed inset-y-0 side-anchoring (Sheet's own shape).");
+  }
+
+  // 5h. Rule 14 / Build Plan §4.6: toFixed() is banned in apps/web and packages/ui —
+  // money display must go through <Money />.
+  if (
+    await ruleFired(
+      "export const amount = (1234.5).toFixed(2);\n",
+      "apps/web/src/__tofixed_fixture__.ts",
+      "no-restricted-syntax",
+    )
+  ) {
+    pass("toFixed() in apps/web is rejected (rule 14).");
+  } else {
+    fail("toFixed() in apps/web was NOT rejected.");
   }
 
   // 6. packages/contracts has zero runtime dependencies beyond zod.

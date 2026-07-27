@@ -96,16 +96,25 @@ export default tseslint.config(
   },
   {
     files: ["apps/api/src/**/*.ts"],
-    ignores: ["apps/api/src/**/*.repository.ts"],
+    // *.repository.ts files are the module data-access layer; prisma.service.ts is the
+    // single shared connection-lifecycle wrapper (onModuleInit/onModuleDestroy) that
+    // repositories inject rather than each instantiating their own PrismaClient.
+    ignores: ["apps/api/src/**/*.repository.ts", "apps/api/src/common/prisma/prisma.service.ts"],
     rules: {
-      "no-restricted-imports": [
+      // Only the PrismaClient value itself is restricted to the data-access layer.
+      // Type-only imports (RoleKey, UnitType, ...) and the Prisma.Decimal value (money
+      // arithmetic, rule 14 — never float) are fine anywhere; they're not database access.
+      "no-restricted-imports": "off",
+      "@typescript-eslint/no-restricted-imports": [
         "error",
         {
           paths: [
             {
               name: "@prisma/client",
+              importNames: ["PrismaClient"],
+              allowTypeImports: true,
               message:
-                "Only *.repository.ts files (and prisma/) may import PrismaClient (Build Plan §1.3).",
+                "Only *.repository.ts files, prisma.service.ts (and prisma/) may import PrismaClient (Build Plan §1.3).",
             },
           ],
         },
@@ -113,8 +122,72 @@ export default tseslint.config(
     },
   },
   {
+    files: ["apps/api/src/**/*.ts"],
+    ignores: ["apps/api/src/storage/**"],
     rules: {
-      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
+      // Rule 18: nothing outside apps/api/src/storage/** may reference a driver by
+      // name — callers depend on the AttachmentStorage interface/DI token instead.
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/storage/postgres-bytea.driver*", "**/storage/filesystem.driver*"],
+              message:
+                "Only apps/api/src/storage/** may reference a storage driver by name (CLAUDE.md rule 18).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    // apps/web-only checks. Both live in one no-restricted-syntax array deliberately —
+    // a second block setting the same rule key for overlapping files would replace this
+    // one wholesale rather than merge with it.
+    // 1. AC-018/Build Plan §4.6: bans a fixed, full-height, side-anchored element in
+    //    apps/web itself — the permanent-sidebar shape. packages/ui/src/primitives/
+    //    sheet.tsx legitimately uses `fixed inset-y-0 right-0` for its temporary,
+    //    dismissible detail drawer, but that file lives in packages/ui, outside this
+    //    rule's scope — apps/web is only ever meant to consume <Sheet />, never
+    //    hand-roll this positioning itself.
+    // 2. Rule 14: never toFixed() for money display — use <Money /> from packages/ui.
+    files: ["apps/web/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value=/^(?=.*\\bfixed\\b)(?=.*\\binset-y-0\\b)(?=.*\\b(left-0|right-0)\\b).*/]",
+          message:
+            "No fixed, full-height, side-anchored element in apps/web — that's the permanent-sidebar shape AC-018 bans. Use <Sheet /> from @psh/ui for temporary drawers.",
+        },
+        {
+          selector: "CallExpression[callee.property.name='toFixed']",
+          message: "Never use toFixed() for money display — use <Money /> from packages/ui (rule 14).",
+        },
+      ],
+    },
+  },
+  {
+    // packages/ui gets the toFixed ban too, but not the sidebar-position one — that
+    // primitive (Sheet) legitimately lives here.
+    files: ["packages/ui/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.property.name='toFixed']",
+          message: "Never use toFixed() for money display — use <Money /> from packages/ui (rule 14).",
+        },
+      ],
+    },
+  },
+  {
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "warn",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
     },
   },
 );

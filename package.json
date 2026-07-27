@@ -15,10 +15,17 @@
     "build": "turbo run build",
     "verify:boundaries": "tsx scripts/verify-boundaries.ts",
     "db:generate": "prisma generate --schema prisma/schema.prisma",
-    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma"
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:rebuild-balances": "tsx scripts/rebuild-balances.ts",
+    "test:int": "turbo run test:int"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "6.19.3"
+    "@prisma/client": "6.19.3",
+    "argon2": "^0.45.1"
   },
   "devDependencies": {
     "@psh/config": "workspace:*",
