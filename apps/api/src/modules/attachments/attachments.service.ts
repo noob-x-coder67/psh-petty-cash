@@ -59,7 +59,7 @@ export class AttachmentsService {
     const sha256 = createHash("sha256").update(finalBytes).digest("hex");
     const pageNo = (await this.attachmentsRepository.countActiveForVoucher(input.voucherId)) + 1;
     const locator = await this.storage.save(finalBytes, {
-      voucherId: input.voucherId,
+      scopeKey: input.voucherId,
       fileName: input.originalName,
     });
 
@@ -80,6 +80,11 @@ export class AttachmentsService {
         tx,
       );
 
+      // Never echo the raw bytes back — in the audit trail (would double storage for
+      // every upload, against BR-014's retention-conscious design) or in the API
+      // response (the client only ever needs metadata to build a view/download link).
+      const { data: _data, storageKey: _storageKey, ...safeAttachment } = attachment;
+
       await this.auditLogRepository.record(tx, {
         actorId: input.actor.id,
         actorRole: input.actor.roleKeys[0] ?? null,
@@ -87,10 +92,10 @@ export class AttachmentsService {
         entityType: "attachments",
         entityId: attachment.id,
         unitId: voucher.account.unitId,
-        after: attachment,
+        after: safeAttachment,
       });
 
-      return attachment;
+      return safeAttachment;
     });
   }
 

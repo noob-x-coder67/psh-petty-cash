@@ -1,10 +1,11 @@
 "use client";
 
-import type { DashboardUnitResponse } from "@psh/contracts";
-import { Button, Card, CardContent, CardHeader, CardTitle, Money, cn } from "@psh/ui";
+import type { ComplianceResponse, DashboardUnitResponse } from "@psh/contracts";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Money, cn } from "@psh/ui";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { revealVariants, usePrefersReducedMotion } from "../../lib/motion";
+import { ComplianceTimeline } from "../month-close/compliance-timeline";
 
 const ENTRY_TYPE_LABEL: Record<string, string> = {
   OPENING: "Opening balance",
@@ -17,9 +18,14 @@ const ENTRY_TYPE_LABEL: Record<string, string> = {
   REVERSAL: "Reversal",
 };
 
-// SRS §12.3 Center Workspace. "Monthly close state" is omitted — that data doesn't
-// exist until Month Close (Phase 7).
-export function CenterWorkspace({ data }: { data: DashboardUnitResponse }) {
+// SRS §12.3 Center Workspace.
+export function CenterWorkspace({
+  data,
+  compliance,
+}: {
+  data: DashboardUnitResponse;
+  compliance: ComplianceResponse;
+}) {
   const reducedMotion = usePrefersReducedMotion();
   const isNegative = Number(data.balance) < 0;
 
@@ -63,6 +69,20 @@ export function CenterWorkspace({ data }: { data: DashboardUnitResponse }) {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle>Three-Month Compliance</CardTitle>
+            <Badge variant={compliance.nextReplenishment.isCompliant ? "positive" : "attention"}>
+              {compliance.nextReplenishment.isCompliant ? "Eligible" : "Hold"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <ComplianceTimeline months={compliance.timeline} />
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

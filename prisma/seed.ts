@@ -116,11 +116,23 @@ async function main(): Promise<void> {
   const passwordHash = await hashDemoPassword(DEMO_PASSWORD);
 
   for (const unit of UNITS) {
-    await prisma.organizationalUnit.upsert({
+    const row = await prisma.organizationalUnit.upsert({
       where: { code: unit.code },
       update: { name: unit.name, type: unit.type, city: unit.city, pettyCashEnabled: unit.pettyCashEnabled },
       create: unit,
     });
+
+    // Appendix E: "Seed active petty-cash units for [the 9 units] ... Seed PSH-ISB ...
+    // with petty_cash_enabled=false and no account" — the explicit "no account" callout
+    // for PSH-ISB implies the other 9 do get one. Starts at zero balance/float; Finance
+    // sets the real approved float via the app's own allocation workflow, not the seed.
+    if (unit.pettyCashEnabled) {
+      await prisma.pettyCashAccount.upsert({
+        where: { unitId: row.id },
+        update: {},
+        create: { unitId: row.id },
+      });
+    }
   }
 
   for (const role of ROLES) {

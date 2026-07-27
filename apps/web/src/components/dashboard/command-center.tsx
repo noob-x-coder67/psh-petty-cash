@@ -1,15 +1,14 @@
 "use client";
 
 import type { DashboardFinanceResponse } from "@psh/contracts";
-import { Card, CardContent, CardHeader, CardTitle, Money, UnitPulseCard } from "@psh/ui";
+import { Badge, Card, CardContent, CardHeader, CardTitle, Money, UnitPulseCard } from "@psh/ui";
 import { motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useAnimatedNumber } from "../../lib/use-animated-number";
 import { revealVariants, staggerContainer, usePrefersReducedMotion } from "../../lib/motion";
 
-// SRS §12.2 Finance Command Center. Three-month compliance ribbon and quick report
-// launches are omitted — both depend on data that doesn't exist until Month Close
-// (Phase 7) and Reports Studio (Phase 6); showing them now would mean fabricating data.
+// SRS §12.2 Finance Command Center. Quick report launches are still omitted — Reports
+// Studio (Phase 6) has no notion yet of "launch pre-filtered from this KPI".
 export function CommandCenter({ data }: { data: DashboardFinanceResponse }) {
   const reducedMotion = usePrefersReducedMotion();
   const router = useRouter();
@@ -21,6 +20,7 @@ export function CommandCenter({ data }: { data: DashboardFinanceResponse }) {
 
   return (
     <div className="flex flex-col gap-6 p-6">
+      <h1 className="text-lg font-semibold text-ink">Finance Command Center</h1>
       <motion.div
         className="grid grid-cols-2 gap-4 lg:grid-cols-4"
         initial={reducedMotion ? false : "hidden"}
@@ -53,6 +53,29 @@ export function CommandCenter({ data }: { data: DashboardFinanceResponse }) {
                 uncheckedCount={unit.uncheckedCount}
                 onSelect={() => goToUnit(unit.unitCode)}
               />
+            ))}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {data.unitsOnHold.length > 0 ? (
+        <Card className="border-amber-500/40">
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <CardTitle className="text-amber-500">Three-Month Compliance Hold</CardTitle>
+              <Badge variant="attention">{data.unitsOnHold.length}</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {data.unitsOnHold.map((unit) => (
+              <button
+                key={unit.unitId}
+                type="button"
+                onClick={() => goToUnit(unit.unitCode)}
+                className="psh-focus-ring rounded-control border border-amber-500/40 bg-amber-100 px-3 py-1.5 text-sm text-amber-500 hover:bg-amber-100/70"
+              >
+                {unit.unitName} ({unit.unitCode})
+              </button>
             ))}
           </CardContent>
         </Card>

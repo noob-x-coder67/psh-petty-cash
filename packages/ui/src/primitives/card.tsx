@@ -19,9 +19,11 @@ export const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivEleme
 );
 CardHeader.displayName = "CardHeader";
 
+// h2 — every Card in this app sits directly under the page's own h1 (no intervening
+// heading level), so h2 keeps the document outline valid (axe's heading-order check).
 export const CardTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
   ({ className, ...props }, ref) => (
-    <h3 ref={ref} className={cn("text-base font-semibold text-ink", className)} {...props} />
+    <h2 ref={ref} className={cn("text-base font-semibold text-ink", className)} {...props} />
   ),
 );
 CardTitle.displayName = "CardTitle";

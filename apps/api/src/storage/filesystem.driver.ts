@@ -14,9 +14,9 @@ const UPLOAD_ROOT = process.env.UPLOAD_ROOT ?? path.join(process.cwd(), "var", "
 
 @Injectable()
 export class FilesystemStorageDriver implements AttachmentStorage {
-  async save(bytes: Buffer, metadata: { voucherId: string; fileName: string }): Promise<StorageLocator> {
+  async save(bytes: Buffer, metadata: { scopeKey: string; fileName: string }): Promise<StorageLocator> {
     await this.scanForMalware(bytes);
-    const key = `${metadata.voucherId}/${randomUUID()}-${metadata.fileName}`;
+    const key = `${metadata.scopeKey}/${randomUUID()}-${metadata.fileName}`;
     const fullPath = path.join(UPLOAD_ROOT, key);
     await mkdir(path.dirname(fullPath), { recursive: true });
     await writeFile(fullPath, bytes);

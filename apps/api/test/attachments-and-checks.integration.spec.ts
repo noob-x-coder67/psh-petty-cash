@@ -89,6 +89,11 @@ describe("attachment upload (FR-DOC-001/002/006)", () => {
     expect(res.body.sha256.length).toBeGreaterThan(0);
     expect(res.body.uploadedBy).toBeDefined();
     expect(res.body.driver).toBe("POSTGRES_BYTEA");
+    // The raw bytes are never echoed back — the client only needs metadata to build a
+    // view/download link, and doubling every upload's payload with its own bytes would
+    // be wasteful (same reasoning as excluding them from the audit trail).
+    expect(res.body.data).toBeUndefined();
+    expect(res.body.storageKey).toBeUndefined();
   });
 
   it("accepts a real PDF", async () => {

@@ -20,7 +20,10 @@ export interface ArchiveResult {
 // Authorization (does this user have unit scope over this attachment's voucher) stays in
 // AttachmentsService, matching the assertUnitScope pattern already used by ExpensesService.
 export interface AttachmentStorage {
-  save(bytes: Buffer, metadata: { voucherId: string; fileName: string }): Promise<StorageLocator>;
+  // scopeKey namespaces the storage path (e.g. a voucher id for receipts, a report
+  // export id for generated PDF/Excel/CSV files) — it isn't specific to attachments,
+  // this interface is the one storage seam for every kind of stored file (rule 18).
+  save(bytes: Buffer, metadata: { scopeKey: string; fileName: string }): Promise<StorageLocator>;
   open(locator: StorageLocator): Promise<Readable>;
   delete(locator: StorageLocator): Promise<void>;
   archive(month: string, scope: string): Promise<ArchiveResult>;

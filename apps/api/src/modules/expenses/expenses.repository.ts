@@ -28,40 +28,105 @@ export interface CreateLineParams {
   otherExplanation?: string;
 }
 
-export type ExpenseVoucherWithLines = Prisma.ExpenseVoucherGetPayload<{ include: { lines: true } }>;
+export interface VoucherListFilters {
+  search?: string;
+  checked?: boolean;
+  category?: "BUILDING" | "VEHICLE" | "OTHER";
+  dateFrom?: Date;
+  dateTo?: Date;
+}
+
+// Attachments are select()ed, never included wholesale — data/storageKey (the raw
+// bytes) must never reach the API response (same reasoning as the upload endpoint).
+const ATTACHMENTS_INCLUDE = {
+  where: { deletedAt: null },
+  orderBy: { pageNo: "asc" as const },
+  select: {
+    id: true,
+    voucherId: true,
+    driver: true,
+    fileName: true,
+    mimeType: true,
+    sizeBytes: true,
+    sha256: true,
+    pageNo: true,
+    uploadedBy: true,
+    uploadedAt: true,
+    deletedAt: true,
+    deletedBy: true,
+    archiveId: true,
+  },
+} satisfies Prisma.ExpenseVoucher$attachmentsArgs;
+
+export type ExpenseVoucherWithLines = Prisma.ExpenseVoucherGetPayload<{
+  include: { lines: true; attachments: typeof ATTACHMENTS_INCLUDE };
+}>;
 
 @Injectable()
 export class ExpensesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findVoucherById(id: string): Promise<ExpenseVoucherWithLines | null> {
-    return this.prisma.expenseVoucher.findUnique({ where: { id }, include: { lines: true } });
+    return this.prisma.expenseVoucher.findUnique({
+      where: { id },
+      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
+    });
   }
 
-  /** Keyset pagination (expense_date, id) — not OFFSET, per Build Plan §2.4/NFR-003. Full
-   * filter/search capability (RPT-02) is Phase 6; this is the minimal register a single
-   * unit needs. */
+  /** Keyset pagination (expense_date, id) — not OFFSET, per Build Plan §2.4/NFR-003.
+   * Search/filters here are the Register's own (SRS §12.6: global search across
+   * voucher/vendor/justification, category/checked/date-range chips) — plain ILIKE via
+   * Prisma's query builder, not the ix_voucher_search tsvector/trigram indexes (those
+   * stay reserved for Reports Studio's heavier filter engine, RPT-02, Phase 6, which
+   * needs real ranked full-text search across a much larger dataset). Both OR-based
+   * conditions (search, keyset cursor) must combine under AND — object-literal spread
+   * would let the second "OR" key silently clobber the first. */
   async listVouchersForAccount(
     accountId: string,
+    filters: VoucherListFilters = {},
     cursor?: { expenseDate: Date; id: string },
     limit = 50,
   ): Promise<ExpenseVoucherWithLines[]> {
+    const andConditions: Prisma.ExpenseVoucherWhereInput[] = [];
+    if (filters.search) {
+      andConditions.push({
+        OR: [
+          { voucherNo: { contains: filters.search, mode: "insensitive" } },
+          { vendorName: { contains: filters.search, mode: "insensitive" } },
+          { justification: { contains: filters.search, mode: "insensitive" } },
+        ],
+      });
+    }
+    if (cursor) {
+      andConditions.push({
+        OR: [
+          { expenseDate: { lt: cursor.expenseDate } },
+          { expenseDate: cursor.expenseDate, id: { lt: cursor.id } },
+        ],
+      });
+    }
+
     return this.prisma.expenseVoucher.findMany({
       where: {
         accountId,
         state: "ACTIVE",
-        ...(cursor
+        ...(filters.checked !== undefined
+          ? { checkedAt: filters.checked ? { not: null } : null }
+          : {}),
+        ...(filters.category ? { lines: { some: { category: filters.category } } } : {}),
+        ...(filters.dateFrom || filters.dateTo
           ? {
-              OR: [
-                { expenseDate: { lt: cursor.expenseDate } },
-                { expenseDate: cursor.expenseDate, id: { lt: cursor.id } },
-              ],
+              expenseDate: {
+                ...(filters.dateFrom ? { gte: filters.dateFrom } : {}),
+                ...(filters.dateTo ? { lte: filters.dateTo } : {}),
+              },
             }
           : {}),
+        ...(andConditions.length > 0 ? { AND: andConditions } : {}),
       },
       orderBy: [{ expenseDate: "desc" }, { id: "desc" }],
       take: limit,
-      include: { lines: true },
+      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
     });
   }
 
@@ -115,7 +180,7 @@ export class ExpensesRepository {
     return client.expenseVoucher.update({
       where: { id: voucherId },
       data: { balanceAfter },
-      include: { lines: true },
+      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
     });
   }
 

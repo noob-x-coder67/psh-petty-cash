@@ -7,7 +7,9 @@ import { AttachmentsModule } from "./modules/attachments/attachments.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ExpensesModule } from "./modules/expenses/expenses.module";
+import { MonthCloseModule } from "./modules/month-close/month-close.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
+import { ReportsModule } from "./modules/reports/reports.module";
 
 @Module({
   imports: [
@@ -20,6 +22,8 @@ import { OrganizationModule } from "./modules/organization/organization.module";
     ExpensesModule,
     AttachmentsModule,
     DashboardModule,
+    ReportsModule,
+    MonthCloseModule,
   ],
 })
 export class AppModule {}

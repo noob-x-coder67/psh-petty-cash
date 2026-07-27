@@ -19,7 +19,7 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import type { CreateVoucherResult } from "./expenses.service";
 import { ExpensesService } from "./expenses.service";
-import type { ExpenseVoucherWithLines } from "./expenses.repository";
+import type { ExpenseVoucherWithLines, VoucherListFilters } from "./expenses.repository";
 
 @Controller("expenses")
 export class ExpensesController {
@@ -42,11 +42,25 @@ export class ExpensesController {
     @Query("unitId") unitId: string,
     @Query("cursorDate") cursorDate: string | undefined,
     @Query("cursorId") cursorId: string | undefined,
+    @Query("q") search: string | undefined,
+    @Query("checked") checked: string | undefined,
+    @Query("category") category: string | undefined,
+    @Query("dateFrom") dateFrom: string | undefined,
+    @Query("dateTo") dateTo: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ExpenseVoucherWithLines[]> {
+    const filters: VoucherListFilters = {
+      search: search || undefined,
+      checked: checked === "true" ? true : checked === "false" ? false : undefined,
+      category:
+        category === "BUILDING" || category === "VEHICLE" || category === "OTHER" ? category : undefined,
+      dateFrom: dateFrom ? new Date(dateFrom) : undefined,
+      dateTo: dateTo ? new Date(dateTo) : undefined,
+    };
     return this.expensesService.listVouchersForUser(
       unitId,
       user,
+      filters,
       cursorDate && cursorId ? { expenseDate: cursorDate, id: cursorId } : undefined,
     );
   }

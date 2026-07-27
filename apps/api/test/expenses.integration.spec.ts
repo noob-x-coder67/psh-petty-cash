@@ -165,7 +165,18 @@ describe("negative balance (BR-011) — allowed, never blocked", () => {
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const cookies = await loginAs("user.sohawa@psh.local");
 
-    const bigAmount = account.cachedBalance.plus("500.00").toFixed(2);
+    // PSH-SOH is a shared fixture account reused by many tests against one persistent
+    // dev DB, and this test itself drives the balance further negative every time it
+    // runs. An earlier version of this fixture used cachedBalance.abs() + 500 as the
+    // bill amount, which — applied to an already-negative balance, repeatedly, run
+    // after run across a whole session — compounds by roughly 2x every run and
+    // eventually overflows NUMERIC(14,2) (confirmed: PSH-SOH reached -5.26e11 and the
+    // next abs()-derived bill amount exceeded the column's 10^12 limit). The actual
+    // intent only needs "a bill large enough that posting it leaves the balance
+    // negative" — if the balance is already negative, any small positive amount
+    // already satisfies that; only a non-negative starting balance needs a margin
+    // added on top of it (never on top of its absolute value).
+    const bigAmount = (account.cachedBalance.isNegative() ? new Prisma.Decimal("10.00") : account.cachedBalance.plus("500.00")).toFixed(2);
     const res = await request(app.getHttpServer())
       .post("/expenses")
       .set("Cookie", cookies)
@@ -330,5 +341,120 @@ describe("reversal (BR-020, FR-EXP-017) — no hard deletion, auditable compensa
     });
     expect(auditEntries).toHaveLength(1);
     expect(auditEntries[0]?.reason).toBe("Entered against the wrong vendor by mistake");
+  });
+});
+
+describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
+  it("global search matches vendor name, voucher number, or justification", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const cookies = await loginAs("user.sohawa@psh.local");
+    const marker = `Zynthex-${Date.now()}`;
+
+    const created = await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send(baseVoucherBody(unit.id, { vendorName: marker }))
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, q: marker })
+      .set("Cookie", cookies)
+      .expect(200);
+
+    expect(res.body.length).toBeGreaterThan(0);
+    expect(res.body.every((v: { vendorName: string }) => v.vendorName === marker)).toBe(true);
+    expect(res.body.some((v: { id: string }) => v.id === created.body.voucher.id)).toBe(true);
+  });
+
+  it("checked filter returns only Checked (or only Unchecked) vouchers", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const sohawaCookies = await loginAs("user.sohawa@psh.local");
+    const marker = `CheckFilter-${Date.now()}`;
+
+    const created = await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", sohawaCookies)
+      .send(baseVoucherBody(unit.id, { vendorName: marker }))
+      .expect(201);
+
+    const financeManagerCookies = await loginAs("financemanager@psh.local");
+    await request(app.getHttpServer())
+      .post(`/expenses/${created.body.voucher.id}/check`)
+      .set("Cookie", financeManagerCookies)
+      .send({})
+      .expect(201);
+
+    const checkedRes = await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, q: marker, checked: "true" })
+      .set("Cookie", sohawaCookies)
+      .expect(200);
+    expect(checkedRes.body).toHaveLength(1);
+    expect(checkedRes.body[0].id).toBe(created.body.voucher.id);
+
+    const uncheckedRes = await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, q: marker, checked: "false" })
+      .set("Cookie", sohawaCookies)
+      .expect(200);
+    expect(uncheckedRes.body).toHaveLength(0);
+  });
+
+  it("category filter returns only vouchers with a matching line category", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const cookies = await loginAs("user.sohawa@psh.local");
+    const marker = `CategoryFilter-${Date.now()}`;
+
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send(
+        baseVoucherBody(unit.id, {
+          vendorName: marker,
+          lines: [{ description: "Fuel", category: "VEHICLE", amount: "100.00" }],
+        }),
+      )
+      .expect(201);
+
+    const vehicleRes = await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, q: marker, category: "VEHICLE" })
+      .set("Cookie", cookies)
+      .expect(200);
+    expect(vehicleRes.body).toHaveLength(1);
+
+    const buildingRes = await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, q: marker, category: "BUILDING" })
+      .set("Cookie", cookies)
+      .expect(200);
+    expect(buildingRes.body).toHaveLength(0);
+  });
+
+  it("date range filter excludes vouchers outside the range", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const cookies = await loginAs("user.sohawa@psh.local");
+    const marker = `DateFilter-${Date.now()}`;
+
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send(baseVoucherBody(unit.id, { vendorName: marker, expenseDate: "2026-06-01" }))
+      .expect(201);
+
+    const inRangeRes = await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, q: marker, dateFrom: "2026-05-01", dateTo: "2026-06-30" })
+      .set("Cookie", cookies)
+      .expect(200);
+    expect(inRangeRes.body).toHaveLength(1);
+
+    const outOfRangeRes = await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, q: marker, dateFrom: "2026-07-01", dateTo: "2026-07-31" })
+      .set("Cookie", cookies)
+      .expect(200);
+    expect(outOfRangeRes.body).toHaveLength(0);
   });
 });

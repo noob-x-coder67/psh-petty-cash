@@ -22,6 +22,13 @@ export const UncheckedQueueItemSchema = z.object({
 });
 export type UncheckedQueueItem = z.infer<typeof UncheckedQueueItemSchema>;
 
+export const UnitOnHoldSchema = z.object({
+  unitId: z.string().uuid(),
+  unitCode: z.string(),
+  unitName: z.string(),
+});
+export type UnitOnHold = z.infer<typeof UnitOnHoldSchema>;
+
 export const DashboardFinanceResponseSchema = z.object({
   kpis: z.object({
     cashIssued: z.string(),
@@ -32,6 +39,9 @@ export const DashboardFinanceResponseSchema = z.object({
   }),
   units: z.array(UnitPulseSchema),
   uncheckedQueue: z.array(UncheckedQueueItemSchema),
+  // FR-REP-003/Phase 7's compliance ribbon: units where a replenishment issued this
+  // month would currently be held (BR-013 — any of the 3 preceding months not CLOSED).
+  unitsOnHold: z.array(UnitOnHoldSchema),
 });
 export type DashboardFinanceResponse = z.infer<typeof DashboardFinanceResponseSchema>;
 

@@ -16,12 +16,15 @@
   --color-royal-500: hsl(226 83% 60%);
   --color-royal-100: hsl(226 90% 96%);
 
-  /* Semantic accents, always paired with text/icon meaning, never color alone */
+  /* Semantic accents, always paired with text/icon meaning, never color alone.
+     -500 shades are tuned to clear 4.5:1 (WCAG AA, NFR-005) as text on white/surface-1
+     — confirmed with a real axe-core run against the five core screens, not just
+     computed; emerald-500 and coral-500 were both originally too light and failed. */
   --color-cyan-500: hsl(189 85% 42%); /* live/healthy movement */
-  --color-emerald-500: hsl(152 60% 38%); /* live/healthy movement */
-  --color-amber-500: hsl(38 92% 48%); /* pending review / compliance attention */
+  --color-emerald-500: hsl(152 60% 30%); /* live/healthy movement */
+  --color-amber-500: hsl(38 92% 32%); /* pending review / compliance attention */
   --color-amber-100: hsl(38 92% 94%);
-  --color-coral-500: hsl(6 78% 56%); /* negative balance / exceptional risk */
+  --color-coral-500: hsl(6 78% 45%); /* negative balance / exceptional risk */
   --color-coral-100: hsl(6 90% 95%);
   --color-violet-500: hsl(262 60% 56%); /* analytical/reporting workspaces */
   --color-violet-100: hsl(262 65% 96%);

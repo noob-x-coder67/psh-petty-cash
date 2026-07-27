@@ -11,7 +11,11 @@ import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repo
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AccountsRepository } from "../accounts/accounts.repository";
-import { ExpensesRepository, type ExpenseVoucherWithLines } from "./expenses.repository";
+import {
+  ExpensesRepository,
+  type ExpenseVoucherWithLines,
+  type VoucherListFilters,
+} from "./expenses.repository";
 import { isBackdated } from "./expenses.rules";
 
 export interface CreateVoucherLineInput {
@@ -205,6 +209,7 @@ export class ExpensesService {
   async listVouchersForUser(
     unitId: string,
     user: AuthenticatedUser,
+    filters: VoucherListFilters,
     cursor?: { expenseDate: string; id: string },
   ): Promise<ExpenseVoucherWithLines[]> {
     if (!user.unitScope.all && !user.unitScope.unitIds.includes(unitId)) {
@@ -216,6 +221,7 @@ export class ExpensesService {
     }
     return this.expensesRepository.listVouchersForAccount(
       account.id,
+      filters,
       cursor ? { expenseDate: new Date(cursor.expenseDate), id: cursor.id } : undefined,
     );
   }

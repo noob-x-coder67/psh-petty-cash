@@ -1,4 +1,4 @@
-import type { DashboardUnitResponse, OrganizationalUnit } from "@psh/contracts";
+import type { ComplianceResponse, DashboardUnitResponse, OrganizationalUnit } from "@psh/contracts";
 import { CenterWorkspace } from "../../../components/dashboard/center-workspace";
 import { serverApiFetch } from "../../../lib/server-api-client";
 
@@ -22,6 +22,9 @@ export default async function MyUnitPage({
     );
   }
 
-  const data = await serverApiFetch<DashboardUnitResponse>(`/dashboard/unit/${selected.id}`);
-  return <CenterWorkspace data={data} />;
+  const [data, compliance] = await Promise.all([
+    serverApiFetch<DashboardUnitResponse>(`/dashboard/unit/${selected.id}`),
+    serverApiFetch<ComplianceResponse>(`/compliance/${selected.id}`),
+  ]);
+  return <CenterWorkspace data={data} compliance={compliance} />;
 }

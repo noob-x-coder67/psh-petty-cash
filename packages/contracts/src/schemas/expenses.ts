@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AttachmentSchema } from "./attachments.js";
 
 const decimalString = z.string().regex(/^\d+(\.\d{1,2})?$/, "must be a decimal amount with up to 2 places");
 
@@ -52,3 +53,49 @@ export const ReverseVoucherRequestSchema = z.object({
   reason: z.string().min(10),
 });
 export type ReverseVoucherRequest = z.infer<typeof ReverseVoucherRequestSchema>;
+
+// Read shapes — mirror ExpenseVoucher/ExpenseLine (prisma/schema.prisma) as serialized
+// over JSON (Decimal -> string via decimal.js's toJSON, Date -> ISO string).
+export const ExpenseLineSchema = z.object({
+  id: z.string().uuid(),
+  voucherId: z.string().uuid(),
+  lineNo: z.number().int(),
+  description: z.string(),
+  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
+  amount: z.string(),
+  otherExplanation: z.string().nullable(),
+});
+export type ExpenseLine = z.infer<typeof ExpenseLineSchema>;
+
+export const ExpenseVoucherSchema = z.object({
+  id: z.string().uuid(),
+  voucherNo: z.string(),
+  accountId: z.string().uuid(),
+  expenseDate: z.string(),
+  billDate: z.string().nullable(),
+  vendorName: z.string(),
+  vendorBillNo: z.string().nullable(),
+  justification: z.string(),
+  billTotal: z.string(),
+  linesTotal: z.string(),
+  state: z.enum(["ACTIVE", "REVERSED"]),
+  hasBill: z.boolean(),
+  missingBillReason: z.string().nullable(),
+  checkedBy: z.string().uuid().nullable(),
+  checkedAt: z.string().nullable(),
+  isBackdated: z.boolean(),
+  balanceAfter: z.string().nullable(),
+  enteredBy: z.string().uuid(),
+  enteredAt: z.string(),
+  reversedByVoucherId: z.string().uuid().nullable(),
+  lines: z.array(ExpenseLineSchema),
+  attachments: z.array(AttachmentSchema),
+});
+export type ExpenseVoucher = z.infer<typeof ExpenseVoucherSchema>;
+
+export const CreateVoucherResultSchema = z.object({
+  voucher: ExpenseVoucherSchema,
+  balanceWarning: z.boolean(),
+  duplicateWarning: z.boolean(),
+});
+export type CreateVoucherResult = z.infer<typeof CreateVoucherResultSchema>;
