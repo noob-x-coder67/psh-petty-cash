@@ -1,11 +1,21 @@
 import { forwardRef, type HTMLAttributes } from "react";
 import { cn } from "../lib/cn.js";
 
+// A faint top-to-bottom gradient (not a flat fill) plus a hairline top highlight —
+// enough to read as a considered surface rather than "a div with a border," without
+// crossing into the glass treatment reserved for the login card/dropdowns/dialogs
+// (redesign brief: "do not make every card transparent glass; use glassmorphism
+// selectively"). Every consumer (KpiCard, UnitPulseCard, page sections) inherits this
+// for free instead of needing its own surface treatment.
 export const Card = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
-  ({ className, ...props }, ref) => (
+  ({ className, style, ...props }, ref) => (
     <div
       ref={ref}
       className={cn("rounded-card border border-border bg-surface-1 shadow-1", className)}
+      style={{
+        backgroundImage: "linear-gradient(180deg, var(--color-elevated) 0%, var(--color-surface-1) 100%)",
+        ...style,
+      }}
       {...props}
     />
   ),

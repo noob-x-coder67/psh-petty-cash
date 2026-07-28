@@ -1,7 +1,8 @@
 "use client";
 
 import type { ComplianceResponse, DashboardUnitResponse } from "@psh/contracts";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Money, cn } from "@psh/ui";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, KpiCard, Money, cn } from "@psh/ui";
+import { ArrowDownToLine, ArrowUpFromLine, Landmark } from "lucide-react";
 import { motion } from "motion/react";
 import Link from "next/link";
 import { revealVariants, usePrefersReducedMotion } from "../../lib/motion";
@@ -47,27 +48,19 @@ export function CenterWorkspace({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Current Balance</p>
-            <Money
-              value={data.balance}
-              className={cn("mt-1 block text-2xl font-semibold text-ink", isNegative && "text-coral-500")}
-            />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Cash Received (this period)</p>
-            <Money value={data.period.cashReceived} className="mt-1 block text-2xl font-semibold text-ink" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Spent (this period)</p>
-            <Money value={data.period.spent} className="mt-1 block text-2xl font-semibold text-ink" />
-          </CardContent>
-        </Card>
+        <KpiCard
+          label="Current Balance"
+          value={<Money value={data.balance} className={cn(isNegative && "text-coral-500")} />}
+          icon={Landmark}
+          accent={isNegative ? "danger" : "success"}
+        />
+        <KpiCard
+          label="Cash Received (this period)"
+          value={<Money value={data.period.cashReceived} />}
+          icon={ArrowDownToLine}
+          accent="primary"
+        />
+        <KpiCard label="Spent (this period)" value={<Money value={data.period.spent} />} icon={ArrowUpFromLine} accent="info" />
       </div>
 
       <Card>

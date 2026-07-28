@@ -1,7 +1,7 @@
 "use client";
 
 import type { ComplianceResponse } from "@psh/contracts";
-import { Button, Card, CardContent, CardHeader, CardTitle, Input } from "@psh/ui";
+import { Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from "@psh/ui";
 import { useState } from "react";
 import { useReplenishment } from "./use-replenishment";
 
@@ -51,66 +51,86 @@ export function ReplenishmentForm({
       <CardHeader>
         <CardTitle>Record Replenishment</CardTitle>
       </CardHeader>
-      <CardContent className="flex flex-col gap-3">
+      <CardContent className="flex flex-col gap-4">
         {isHeld ? (
-          <div className="rounded-control border border-coral-500/40 bg-coral-500/10 p-3 text-sm text-coral-500">
-            Hold — Three-Month Closing Incomplete.{" "}
+          <Alert variant="danger" title="Hold — Three-Month Closing Incomplete">
+            One of the preceding three monthly closings for this unit isn&apos;t complete (BR-013), so this
+            replenishment can&apos;t be recorded yet.{" "}
             {canOverrideHold
-              ? "You may record an audited exception below to proceed."
-              : "A Finance Manager or Super Admin must record an exception to proceed."}
-          </div>
+              ? "As a Finance Manager or Super Admin, you may record an audited exception below to proceed."
+              : "A Finance Manager or Super Admin must record an audited exception before this can proceed — this account doesn't have that permission."}
+          </Alert>
         ) : null}
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            Amount
-            <Input aria-label="Amount" value={amount} onChange={(event) => setAmount(event.target.value)} className="w-32" />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            Issue Date
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="replenishment-amount">Amount</Label>
             <Input
+              id="replenishment-amount"
+              aria-label="Amount"
+              value={amount}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="replenishment-issue-date">Issue Date</Label>
+            <Input
+              id="replenishment-issue-date"
               aria-label="Issue date"
               type="date"
               value={issueDate}
               onChange={(event) => setIssueDate(event.target.value)}
-              className="w-40"
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            Reference No.
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="replenishment-reference">
+              Reference No. <span className="font-normal text-ink-muted">(optional)</span>
+            </Label>
             <Input
+              id="replenishment-reference"
               aria-label="Reference number"
               value={referenceNo}
               onChange={(event) => setReferenceNo(event.target.value)}
-              className="w-40"
             />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            Payment Mode
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="replenishment-payment-mode">
+              Payment Mode <span className="font-normal text-ink-muted">(optional)</span>
+            </Label>
             <Input
+              id="replenishment-payment-mode"
               aria-label="Payment mode"
               value={paymentMode}
               onChange={(event) => setPaymentMode(event.target.value)}
-              className="w-32"
             />
-          </label>
+          </div>
         </div>
 
-        <label className="flex flex-col gap-1 text-xs text-ink-muted">
-          Remarks
-          <Input aria-label="Remarks" value={remarks} onChange={(event) => setRemarks(event.target.value)} className="w-full" />
-        </label>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="replenishment-remarks">
+            Remarks <span className="font-normal text-ink-muted">(optional)</span>
+          </Label>
+          <Input
+            id="replenishment-remarks"
+            aria-label="Remarks"
+            value={remarks}
+            onChange={(event) => setRemarks(event.target.value)}
+          />
+        </div>
 
         {needsException ? (
-          <label className="flex flex-col gap-1 text-xs text-ink-muted">
-            Exception Reason (required to override the hold)
+          <div className="flex flex-col gap-1.5 rounded-card border border-amber-500/30 bg-amber-100 p-3">
+            <Label htmlFor="replenishment-exception-reason" className="text-amber-500">
+              Exception Reason — required to override the hold
+            </Label>
             <Input
+              id="replenishment-exception-reason"
               aria-label="Exception reason"
               value={exceptionReason}
               onChange={(event) => setExceptionReason(event.target.value)}
-              className="w-full"
+              className="bg-surface-1"
             />
-          </label>
+          </div>
         ) : null}
 
         <div>
@@ -128,11 +148,11 @@ export function ReplenishmentForm({
           </Button>
         </div>
         {createError ? (
-          <span className="text-sm text-coral-500">
-            {createError instanceof Error ? createError.message : "Could not record the replenishment."}
-          </span>
+          <Alert variant="danger" title="Couldn't record the replenishment">
+            {createError instanceof Error ? createError.message : "Please check the values above and try again."}
+          </Alert>
         ) : null}
-        {created ? <p className="text-sm text-emerald-500">Recorded — pending receipt confirmation.</p> : null}
+        {created ? <Alert variant="success" title="Recorded — pending receipt confirmation" /> : null}
       </CardContent>
     </Card>
   );

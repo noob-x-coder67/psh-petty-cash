@@ -1,11 +1,35 @@
 "use client";
 
 import type { OrganizationalUnit } from "@psh/contracts";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Money, VarianceCell } from "@psh/ui";
+import {
+  Alert,
+  Button,
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  ConfirmationDialog,
+  Input,
+  Label,
+  Money,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  StatusBadge,
+  VarianceCell,
+} from "@psh/ui";
+import { Lock, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { ComplianceTimeline } from "./compliance-timeline";
 import { useCompliance } from "./use-compliance";
 import { useMonthlyClosing, type Period } from "./use-monthly-closing";
+
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
 
 function currentKarachiPeriod(): Period {
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -40,6 +64,7 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
   const [remarks, setRemarks] = useState("");
   const [reopenReason, setReopenReason] = useState("");
   const [showReopenInput, setShowReopenInput] = useState(false);
+  const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
   const varianceWouldBeNonZero =
     closing?.expectedBalance !== undefined &&
@@ -73,33 +98,39 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <label className="flex flex-col gap-1 text-xs text-ink-muted">
-          Year
+      <div className="flex flex-wrap items-end gap-3 rounded-card border border-border bg-muted-surface p-4">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="month-close-year">Year</Label>
           <Input
+            id="month-close-year"
             aria-label="Period year"
             type="number"
             value={period.year}
             onChange={(event) => setPeriod((prev) => ({ ...prev, year: Number(event.target.value) }))}
             className="w-24"
           />
-        </label>
-        <label className="flex flex-col gap-1 text-xs text-ink-muted">
-          Month
-          <select
-            aria-label="Period month"
-            value={period.month}
-            onChange={(event) => setPeriod((prev) => ({ ...prev, month: Number(event.target.value) }))}
-            className="psh-focus-ring h-10 rounded-control border border-border bg-surface-1 px-2 text-sm text-ink"
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="month-close-month">Month</Label>
+          <Select
+            value={String(period.month)}
+            onValueChange={(value) => setPeriod((prev) => ({ ...prev, month: Number(value) }))}
           >
-            {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-              <option key={month} value={month}>
-                {month}
-              </option>
-            ))}
-          </select>
-        </label>
-        {closing ? <Badge variant={closing.status === "CLOSED" ? "positive" : "attention"}>{closing.status}</Badge> : null}
+            <SelectTrigger id="month-close-month" aria-label="Period month" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {MONTH_NAMES.map((name, index) => (
+                <SelectItem key={name} value={String(index + 1)}>
+                  {name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        {closing ? (
+          <StatusBadge status={closing.status === "CLOSED" ? "closed" : "open"} className="mb-0.5" />
+        ) : null}
       </div>
 
       {compliance ? (
@@ -107,13 +138,15 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
           <CardHeader>
             <CardTitle>Three-Month Compliance</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2">
+          <CardContent className="flex flex-col gap-3">
             <ComplianceTimeline months={compliance.timeline} />
-            <p className="text-sm text-ink-muted">
-              {compliance.nextReplenishment.isCompliant
-                ? "A fourth-month replenishment is currently eligible."
-                : "Hold — Three-Month Closing Incomplete: a replenishment this month requires a Finance Manager/Super Admin exception."}
-            </p>
+            {compliance.nextReplenishment.isCompliant ? (
+              <Alert variant="success" title="Eligible for fourth-month replenishment" />
+            ) : (
+              <Alert variant="warning" title="Hold — Three-Month Closing Incomplete">
+                A replenishment this month requires a Finance Manager or Super Admin to record an audited exception.
+              </Alert>
+            )}
           </CardContent>
         </Card>
       ) : null}
@@ -154,74 +187,103 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
 
             {closing.status === "OPEN" ? (
               <div className="flex flex-wrap items-end gap-3 border-t border-border pt-3">
-                <label className="flex flex-col gap-1 text-xs text-ink-muted">
-                  Physical Cash Count
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="physical-cash-count">Physical Cash Count</Label>
                   <Input
+                    id="physical-cash-count"
                     aria-label="Physical cash count"
                     value={physicalCashCount}
                     onChange={(event) => setPhysicalCashCount(event.target.value)}
                     className="w-40"
                   />
-                </label>
-                <label className="flex flex-col gap-1 text-xs text-ink-muted">
-                  Remarks {varianceWouldBeNonZero ? "(required)" : "(optional)"}
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="cash-count-remarks">
+                    Remarks{" "}
+                    <span className="font-normal text-ink-muted">
+                      {varianceWouldBeNonZero ? "(required)" : "(optional)"}
+                    </span>
+                  </Label>
                   <Input
+                    id="cash-count-remarks"
                     aria-label="Remarks"
                     value={remarks}
                     onChange={(event) => setRemarks(event.target.value)}
                     className="w-64"
                   />
-                </label>
+                </div>
                 <Button onClick={handleSubmitCount} disabled={isRecording || !physicalCashCount}>
                   {isRecording ? "Saving..." : "Save Cash Count"}
                 </Button>
                 {recordError ? (
-                  <span className="text-sm text-coral-500">
-                    {recordError instanceof Error ? recordError.message : "Could not save the cash count."}
-                  </span>
+                  <Alert variant="danger" title="Couldn't save the cash count" className="w-full">
+                    {recordError instanceof Error ? recordError.message : "Please try again."}
+                  </Alert>
                 ) : null}
               </div>
             ) : null}
 
-            <div className="flex flex-wrap items-center gap-3 border-t border-border pt-3">
+            <div className="flex flex-col gap-2 border-t border-border pt-3">
               {closing.status === "OPEN" && canClose ? (
-                <Button onClick={handleClose} disabled={isClosing || !closing.physicalCashCount}>
-                  {isClosing ? "Closing..." : "Close Month"}
-                </Button>
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Deliberately not a standard primary Button — closing a month is
+                      final and audited (BR-013), so it gets its own dark, formal
+                      treatment plus a confirmation step, distinct from every other
+                      action on this page. */}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmCloseOpen(true)}
+                    disabled={isClosing || !closing.physicalCashCount}
+                    className="psh-focus-ring inline-flex h-11 items-center gap-2 rounded-control bg-linear-to-r from-midnight-900 to-midnight-700 px-5 text-sm font-semibold text-white shadow-2 transition-all hover:shadow-3 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                  >
+                    <ShieldCheck className="h-4 w-4" aria-hidden />
+                    {isClosing ? "Closing..." : "Close Month"}
+                  </button>
+                  {!closing.physicalCashCount ? (
+                    <span className="flex items-center gap-1.5 text-xs text-ink-muted">
+                      <Lock className="h-3.5 w-3.5" aria-hidden />
+                      Record a physical cash count above before closing.
+                    </span>
+                  ) : null}
+                </div>
               ) : null}
               {closeError ? (
-                <span className="text-sm text-coral-500">
-                  {closeError instanceof Error ? closeError.message : "Could not close the month."}
-                </span>
+                <Alert variant="danger" title="Couldn't close the month">
+                  {closeError instanceof Error ? closeError.message : "Please try again."}
+                </Alert>
               ) : null}
 
               {closing.status === "CLOSED" && canClose ? (
                 showReopenInput ? (
-                  <>
-                    <Input
-                      aria-label="Reopen reason"
-                      placeholder="Reason for reopening"
-                      value={reopenReason}
-                      onChange={(event) => setReopenReason(event.target.value)}
-                      className="w-64"
-                    />
+                  <div className="flex flex-wrap items-end gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor="reopen-reason">Reason for Reopening</Label>
+                      <Input
+                        id="reopen-reason"
+                        aria-label="Reopen reason"
+                        placeholder="Required to reopen a closed month"
+                        value={reopenReason}
+                        onChange={(event) => setReopenReason(event.target.value)}
+                        className="w-64"
+                      />
+                    </div>
                     <Button variant="secondary" onClick={handleReopen} disabled={isReopening || !reopenReason.trim()}>
                       Confirm Reopen
                     </Button>
                     <Button variant="ghost" onClick={() => setShowReopenInput(false)}>
                       Cancel
                     </Button>
-                  </>
+                  </div>
                 ) : (
-                  <Button variant="secondary" onClick={() => setShowReopenInput(true)}>
+                  <Button variant="secondary" onClick={() => setShowReopenInput(true)} className="self-start">
                     Reopen Month
                   </Button>
                 )
               ) : null}
               {reopenError ? (
-                <span className="text-sm text-coral-500">
-                  {reopenError instanceof Error ? reopenError.message : "Could not reopen the month."}
-                </span>
+                <Alert variant="danger" title="Couldn't reopen the month">
+                  {reopenError instanceof Error ? reopenError.message : "Please try again."}
+                </Alert>
               ) : null}
             </div>
 
@@ -235,6 +297,19 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
           </CardContent>
         </Card>
       ) : null}
+
+      <ConfirmationDialog
+        open={confirmCloseOpen}
+        onOpenChange={setConfirmCloseOpen}
+        title="Close this month?"
+        description="This finalizes the month's cash count and expenditure totals. It can only be reopened afterward with a recorded reason, which is itself audited."
+        confirmLabel={isClosing ? "Closing..." : "Close Month"}
+        confirmLoading={isClosing}
+        onConfirm={() => {
+          handleClose();
+          setConfirmCloseOpen(false);
+        }}
+      />
     </div>
   );
 }

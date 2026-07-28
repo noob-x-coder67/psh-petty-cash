@@ -1,7 +1,24 @@
 "use client";
 
 import type { ExpenseVoucher, OrganizationalUnit } from "@psh/contracts";
-import { Badge, Button, CategoryChip, CheckedMarker, Input, Money } from "@psh/ui";
+import {
+  Badge,
+  Button,
+  CategoryChip,
+  CheckedMarker,
+  Checkbox,
+  EmptyState,
+  Input,
+  Label,
+  Money,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Skeleton,
+  cn,
+} from "@psh/ui";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import {
   createColumnHelper,
@@ -12,9 +29,9 @@ import {
   type SortingState,
   type VisibilityState,
 } from "@tanstack/react-table";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Columns3, Receipt, Search } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api-client";
 
 // Matches ExpensesRepository.listVouchersForAccount's default `limit` — the controller
@@ -78,7 +95,7 @@ const columns = [
   }),
   columnHelper.accessor("billTotal", {
     header: "Amount",
-    cell: (info) => <Money value={info.getValue()} />,
+    cell: (info) => <Money value={info.getValue()} className="font-medium" />,
   }),
   columnHelper.display({
     id: "checked",
@@ -112,6 +129,17 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
   });
 
   const rows = useMemo(() => data?.pages.flatMap((page) => page.vouchers) ?? [], [data]);
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const columnsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!columnsOpen) return;
+    function onClickOutside(event: MouseEvent): void {
+      if (columnsRef.current && !columnsRef.current.contains(event.target as Node)) setColumnsOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [columnsOpen]);
 
   const table = useReactTable({
     data: rows,
@@ -132,81 +160,125 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
         </p>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
-        <Input
-          aria-label="Search voucher, vendor, or justification"
-          placeholder="Search voucher, vendor, justification..."
-          value={filters.search}
-          onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
-          className="w-64"
-        />
-        <select
-          aria-label="Category"
-          value={filters.category}
-          onChange={(event) =>
-            setFilters((prev) => ({ ...prev, category: event.target.value as RegisterFilters["category"] }))
-          }
-          className="psh-focus-ring h-10 rounded-control border border-border bg-surface-1 px-2 text-sm text-ink"
-        >
-          <option value="ALL">All categories</option>
-          <option value="BUILDING">Building</option>
-          <option value="VEHICLE">Vehicle</option>
-          <option value="OTHER">Other</option>
-        </select>
-        <select
-          aria-label="Checked status"
-          value={filters.checked}
-          onChange={(event) =>
-            setFilters((prev) => ({ ...prev, checked: event.target.value as RegisterFilters["checked"] }))
-          }
-          className="psh-focus-ring h-10 rounded-control border border-border bg-surface-1 px-2 text-sm text-ink"
-        >
-          <option value="all">Checked + Unchecked</option>
-          <option value="true">Checked only</option>
-          <option value="false">Unchecked only</option>
-        </select>
-        <Input
-          aria-label="From date"
-          type="date"
-          value={filters.dateFrom}
-          onChange={(event) => setFilters((prev) => ({ ...prev, dateFrom: event.target.value }))}
-          className="w-40"
-        />
-        <Input
-          aria-label="To date"
-          type="date"
-          value={filters.dateTo}
-          onChange={(event) => setFilters((prev) => ({ ...prev, dateTo: event.target.value }))}
-          className="w-40"
-        />
-      </div>
-
-      <div className="flex flex-wrap gap-3 text-xs text-ink-muted">
-        {table.getAllLeafColumns().map((column) => (
-          <label key={column.id} className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              checked={column.getIsVisible()}
-              onChange={column.getToggleVisibilityHandler()}
-              className="h-3.5 w-3.5"
+      <div className="flex flex-wrap items-end gap-3 rounded-card border border-border bg-muted-surface p-4">
+        <div className="flex min-w-56 flex-1 flex-col gap-1.5">
+          <Label htmlFor="expense-search">Search</Label>
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" aria-hidden />
+            <Input
+              id="expense-search"
+              aria-label="Search voucher, vendor, or justification"
+              placeholder="Voucher, vendor, justification..."
+              value={filters.search}
+              onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+              className="pl-9"
             />
-            {typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}
-          </label>
-        ))}
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="expense-category">Category</Label>
+          <Select
+            value={filters.category}
+            onValueChange={(value) =>
+              setFilters((prev) => ({ ...prev, category: value as RegisterFilters["category"] }))
+            }
+          >
+            <SelectTrigger id="expense-category" aria-label="Category" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All categories</SelectItem>
+              <SelectItem value="BUILDING">Building</SelectItem>
+              <SelectItem value="VEHICLE">Vehicle</SelectItem>
+              <SelectItem value="OTHER">Other</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="expense-checked">Status</Label>
+          <Select
+            value={filters.checked}
+            onValueChange={(value) => setFilters((prev) => ({ ...prev, checked: value as RegisterFilters["checked"] }))}
+          >
+            <SelectTrigger id="expense-checked" aria-label="Checked status" className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Checked + Unchecked</SelectItem>
+              <SelectItem value="true">Checked only</SelectItem>
+              <SelectItem value="false">Unchecked only</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="expense-date-from">From</Label>
+          <Input
+            id="expense-date-from"
+            aria-label="From date"
+            type="date"
+            value={filters.dateFrom}
+            onChange={(event) => setFilters((prev) => ({ ...prev, dateFrom: event.target.value }))}
+            className="w-40"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="expense-date-to">To</Label>
+          <Input
+            id="expense-date-to"
+            aria-label="To date"
+            type="date"
+            value={filters.dateTo}
+            onChange={(event) => setFilters((prev) => ({ ...prev, dateTo: event.target.value }))}
+            className="w-40"
+          />
+        </div>
+
+        <div ref={columnsRef} className="relative">
+          <Button
+            type="button"
+            variant="secondary"
+            className="gap-2"
+            onClick={() => setColumnsOpen((v) => !v)}
+            aria-expanded={columnsOpen}
+            aria-haspopup="true"
+          >
+            <Columns3 className="h-4 w-4" aria-hidden />
+            Columns
+          </Button>
+          {columnsOpen ? (
+            <div className="absolute right-0 top-full z-popover mt-2 w-48 rounded-control border border-border bg-elevated p-2 shadow-3">
+              {table.getAllLeafColumns().map((column) => (
+                <label
+                  key={column.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-sm text-ink hover:bg-interactive-surface"
+                >
+                  <Checkbox checked={column.getIsVisible()} onCheckedChange={() => column.toggleVisibility()} />
+                  {typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="overflow-x-auto rounded-card border border-border">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-surface-0">
+          <thead className="sticky top-0 z-sticky bg-muted-surface">
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
                 {headerGroup.headers.map((header) => (
                   <th
                     key={header.id}
-                    className="cursor-pointer select-none border-b border-border px-3 py-2 text-left font-medium text-ink-muted"
+                    className={cn(
+                      "psh-focus-ring cursor-pointer select-none border-b border-border px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-ink-muted transition-colors hover:text-ink",
+                      header.column.id === "billTotal" && "text-right",
+                    )}
                     onClick={header.column.getToggleSortingHandler()}
                   >
-                    <div className="flex items-center gap-1">
+                    <div className={cn("flex items-center gap-1", header.column.id === "billTotal" && "justify-end")}>
                       {flexRender(header.column.columnDef.header, header.getContext())}
                       {header.column.getIsSorted() === "asc" ? <ChevronUp className="h-3 w-3" aria-hidden /> : null}
                       {header.column.getIsSorted() === "desc" ? (
@@ -219,26 +291,48 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                key={row.id}
-                className="cursor-pointer border-b border-border last:border-0 hover:bg-surface-0"
-                onClick={() => router.push(`/expenses/${row.original.id}`)}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td key={cell.id} className="px-3 py-2 text-ink">
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
+            {isLoading ? (
+              Array.from({ length: 6 }).map((_, index) => (
+                <tr key={index} className="border-b border-border last:border-0">
+                  {table.getAllLeafColumns().map((column) => (
+                    <td key={column.id} className="px-3 py-3">
+                      <Skeleton className="h-4 w-full max-w-32" />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : (
+              <>
+                {table.getRowModel().rows.map((row) => (
+                  <tr
+                    key={row.id}
+                    className="cursor-pointer border-b border-border transition-colors last:border-0 hover:bg-interactive-surface"
+                    onClick={() => router.push(`/expenses/${row.original.id}`)}
+                  >
+                    {row.getVisibleCells().map((cell) => (
+                      <td
+                        key={cell.id}
+                        className={cn("px-3 py-2.5 text-ink", cell.column.id === "billTotal" && "text-right tabular-nums")}
+                      >
+                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </tr>
-            ))}
-            {!isLoading && rows.length === 0 ? (
-              <tr>
-                <td colSpan={columns.length} className="px-3 py-6 text-center text-ink-muted">
-                  No vouchers match these filters.
-                </td>
-              </tr>
-            ) : null}
+                {rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={columns.length} className="p-0">
+                      <EmptyState
+                        icon={Receipt}
+                        title="No vouchers match these filters"
+                        description="Try widening the date range or clearing a filter."
+                        className="rounded-none border-none"
+                      />
+                    </td>
+                  </tr>
+                ) : null}
+              </>
+            )}
           </tbody>
         </table>
       </div>

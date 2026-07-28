@@ -1,14 +1,21 @@
 /*
  * Aurora Ledger design tokens (SRS §11.3 "Visual Personality", §11.4 "Design Tokens").
- * Light-first only — dark theme is explicitly deferred until after core UAT (§11.4's
- * own "Theme" row), so no dark-mode block exists here yet.
+ * Light and dark are both first-class (ADR-0004 pulled the original post-UAT dark-mode
+ * plan forward) — every semantic color below has a light default here in `@theme` and a
+ * dark override further down. Any new color token added later must supply both.
  *
  * Consumed via Tailwind v4's CSS-first `@theme` — every custom property below becomes
  * a utility class (e.g. --color-royal-600 -> bg-royal-600/text-royal-600/border-royal-600,
  * --radius-card -> rounded-card, --shadow-2 -> shadow-2, --font-sans -> font-sans).
+ * Tailwind v4 compiles these utilities as `var(--color-x)` references, not baked-in
+ * literals, so overriding the custom property under a more specific selector (below)
+ * re-themes every utility site-wide with no per-component `dark:` variants needed.
  */
 @theme {
-  /* Brand — "deep midnight and royal blue establish institutional authority" */
+  /* Brand — "deep midnight and royal blue establish institutional authority". These three
+     are used as fixed, deliberately-dark chrome (modal/sheet scrims, the login identity
+     mark) rather than as page surfaces, so — unlike every other color below — they do
+     NOT get a dark-mode override; they mean "solid dark navy" in both themes. */
   --color-midnight-950: hsl(222 47% 6%);
   --color-midnight-900: hsl(222 44% 11%);
   --color-midnight-700: hsl(222 35% 24%);
@@ -37,6 +44,42 @@
   --color-ink: hsl(222 47% 11%);
   --color-ink-muted: hsl(220 9% 42%);
 
+  /* Semantic aliases — new component work should reach for these rather than the raw
+     palette names above, so intent stays legible in markup (e.g. `bg-danger` reads
+     clearly; `bg-coral-500` requires knowing what coral means). Existing components
+     using the raw names above are unaffected and already re-theme correctly, since
+     these aliases just point at the same custom properties. */
+  --color-background: var(--color-surface-0);
+  --color-elevated: hsl(0 0% 100%); /* modals/popovers/dropdowns — one step above surface-1 */
+  --color-muted-surface: hsl(220 20% 96%); /* recessed panels, e.g. filter bars */
+  --color-inverse-surface: var(--color-midnight-900); /* tooltip bg — must stay legible against a dark page too */
+  --color-primary: var(--color-royal-600);
+  --color-primary-hover: hsl(226 83% 47%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(220 14% 93%);
+  --color-secondary-foreground: var(--color-ink);
+  --color-success: var(--color-emerald-500);
+  --color-warning: var(--color-amber-500);
+  --color-danger: var(--color-coral-500);
+  --color-info: var(--color-cyan-500);
+  --color-overlay: hsl(222 47% 6% / 0.4);
+  --color-skeleton: hsl(220 16% 92%);
+
+  /* Glassmorphism surfaces (login card) — a true frosted-glass panel needs opacity that
+     differs by theme far more than hue does (dark glass: ~14%/4% white wash so the vivid
+     background shows through; light glass: ~65%/32% white wash so it still reads as a
+     panel against an already-light page) — a plain color token with a fixed `/NN` opacity
+     modifier at the call site can't express that, so these bake the alpha directly into
+     the token per theme instead. */
+  --color-glass-from: rgba(255, 255, 255, 0.65);
+  --color-glass-to: rgba(255, 255, 255, 0.32);
+  --color-glass-border: rgba(148, 163, 184, 0.35);
+  --color-glass-shadow: rgba(100, 116, 180, 0.18);
+  --color-glass-glow: rgba(99, 102, 241, 0.18);
+  --color-glass-input: rgba(255, 255, 255, 0.5);
+  --color-glass-input-border: rgba(120, 140, 190, 0.3);
+  --color-glass-input-focus: rgba(255, 255, 255, 0.65);
+
   /* Radii — SRS §11.4: 10px controls, 16px cards, 24px feature surfaces */
   --radius-control: 0.625rem;
   --radius-card: 1rem;
@@ -50,16 +93,194 @@
   /* Typography — "Aptos/Inter-style sans"; the actual Inter font is loaded by
      apps/web via next/font and bound to --font-sans-override at the document root. */
   --font-sans: var(--font-sans-override), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Interactive surface — hover/active state for clickable rows and menu items, one
+     step up from --color-secondary so it stays visible against both --color-surface-1
+     (cards) and --color-elevated (popovers) without special-casing either. */
+  --color-interactive-surface: hsl(220 20% 95%);
+  --color-interactive-surface-hover: hsl(220 20% 91%);
+
+  /* Generic glow — ambient accent glow for non-glass elevated elements (e.g. an active
+     nav indicator, a focused KPI card), distinct from the glass-specific --color-glass-glow
+     which is tuned for backdrop-filter panels specifically. */
+  --color-glow: hsl(226 83% 60% / 0.25);
+
+  /* Chart palette (Recharts) — ordered so adjacent series stay visually distinct;
+     reuses the same semantic hues as everything else (SRS §11.3) rather than an
+     unrelated categorical palette, so a chart legend still means what the rest of the
+     app already taught the user (royal = primary, coral = risk, etc). */
+  --color-chart-1: var(--color-royal-600);
+  --color-chart-2: var(--color-violet-500);
+  --color-chart-3: var(--color-cyan-500);
+  --color-chart-4: var(--color-amber-500);
+  --color-chart-5: var(--color-emerald-500);
+  --color-chart-6: var(--color-coral-500);
+
+  /* Z-index scale — named layers so stacking order is decided once, here, instead of
+     ad hoc per component (masthead currently hardcodes z-40, for example). */
+  --z-dropdown: 30;
+  --z-sticky: 40;
+  --z-overlay: 45;
+  --z-modal: 50;
+  --z-popover: 55;
+  --z-toast: 60;
+  --z-tooltip: 70;
+
+  /* Control heights — SRS §11.4 control-height scale; components should reach for
+     h-control-* instead of one-off h-9/h-10/h-11 values so every input/button/select
+     lines up on the same baseline. */
+  --control-height-sm: 2rem; /* 32px */
+  --control-height-md: 2.5rem; /* 40px */
+  --control-height-lg: 2.75rem; /* 44px */
+
+  /* Motion durations/easing — SRS §13.2: "180-320ms primary interactions, 350-550ms
+     workspace-level transitions." Plain CSS custom properties (not a Tailwind @theme
+     namespace, since these are consumed as transition-duration values, not utility
+     class generators) so both CSS transitions and Motion's `transition={}` configs in
+     apps/web can reference one shared source instead of restating the numbers. */
+  --duration-fast: 180ms;
+  --duration-base: 240ms;
+  --duration-slow: 320ms;
+  --duration-workspace: 450ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.34, 1.15, 0.64, 1);
 }
 
 /* Focus ring (2px accessible accent outline, SRS §11.4) — not a Tailwind theme
-   namespace, applied directly. */
+   namespace, applied directly. References --color-primary (itself a var() alias for
+   --color-royal-600), so it automatically follows either token's theme override below
+   without needing its own dark-mode entry. */
 :root {
   --focus-ring-width: 2px;
-  --focus-ring-color: var(--color-royal-600);
+  --focus-ring-color: var(--color-primary);
 }
 
 .psh-focus-ring:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring-color);
   outline-offset: 2px;
+}
+
+/* Subtle grain/dust texture for glass surfaces (login card + background) — an inline
+   SVG feTurbulence data URI, not a raster image, so there's no asset to ship or load.
+   Opacity lives on the element that applies this class (not baked in here) so callers
+   can tune it per surface; ~0.03-0.05 is the "nearly invisible" range this is meant for. */
+.psh-grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/*
+ * Dark-mode overrides (ADR-0004). Applied two ways so a manual choice always wins over
+ * the OS preference in either direction:
+ *  - `@media (prefers-color-scheme: dark)` scoped to :root:not([data-theme="light"]) —
+ *    the "system" default when the user hasn't picked an explicit theme.
+ *  - `:root[data-theme="dark"]` — an explicit user choice, regardless of OS preference.
+ * `apps/web`'s ThemeProvider stamps `data-theme="light"|"dark"` on <html> for an
+ * explicit choice, and removes the attribute entirely for "system".
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-royal-600: hsl(226 88% 68%);
+    --color-royal-500: hsl(226 88% 74%);
+    --color-royal-100: hsl(226 45% 20%);
+
+    --color-cyan-500: hsl(189 85% 58%);
+    --color-emerald-500: hsl(152 55% 50%);
+    --color-amber-500: hsl(38 90% 58%);
+    --color-amber-100: hsl(38 55% 17%);
+    --color-coral-500: hsl(6 82% 65%);
+    --color-coral-100: hsl(6 50% 19%);
+    --color-violet-500: hsl(262 68% 70%);
+    --color-violet-100: hsl(262 40% 22%);
+
+    --color-surface-0: hsl(222 32% 8%);
+    --color-surface-1: hsl(222 28% 12%);
+    --color-border: hsl(222 20% 20%);
+    --color-border-strong: hsl(222 20% 29%);
+    --color-ink: hsl(210 30% 95%);
+    --color-ink-muted: hsl(215 16% 68%);
+
+    --color-elevated: hsl(222 26% 15%);
+    --color-muted-surface: hsl(222 30% 10%);
+    --color-inverse-surface: hsl(222 22% 26%);
+    --color-primary-hover: hsl(226 88% 75%);
+    --color-secondary: hsl(222 22% 18%);
+    --color-secondary-foreground: hsl(210 30% 95%);
+    --color-overlay: hsl(222 47% 3% / 0.55);
+    --color-skeleton: hsl(222 22% 18%);
+    --color-interactive-surface: hsl(222 22% 16%);
+    --color-interactive-surface-hover: hsl(222 22% 21%);
+    --color-glow: hsl(226 88% 74% / 0.3);
+
+    --color-glass-from: rgba(255, 255, 255, 0.13);
+    --color-glass-to: rgba(255, 255, 255, 0.045);
+    --color-glass-border: rgba(255, 255, 255, 0.22);
+    --color-glass-shadow: rgba(0, 0, 0, 0.38);
+    --color-glass-glow: rgba(87, 112, 255, 0.16);
+    --color-glass-input: rgba(4, 10, 24, 0.2);
+    --color-glass-input-border: rgba(255, 255, 255, 0.18);
+    --color-glass-input-focus: rgba(4, 10, 24, 0.28);
+
+    --shadow-1: 0 1px 2px hsl(0 0% 0% / 0.35), 0 1px 1px hsl(0 0% 0% / 0.25);
+    --shadow-2: 0 4px 10px hsl(0 0% 0% / 0.4), 0 2px 4px hsl(0 0% 0% / 0.28);
+    --shadow-3: 0 12px 28px hsl(0 0% 0% / 0.45), 0 4px 10px hsl(0 0% 0% / 0.32);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-royal-600: hsl(226 88% 68%);
+  --color-royal-500: hsl(226 88% 74%);
+  --color-royal-100: hsl(226 45% 20%);
+
+  --color-cyan-500: hsl(189 85% 58%);
+  --color-emerald-500: hsl(152 55% 50%);
+  --color-amber-500: hsl(38 90% 58%);
+  --color-amber-100: hsl(38 55% 17%);
+  --color-coral-500: hsl(6 82% 65%);
+  --color-coral-100: hsl(6 50% 19%);
+  --color-violet-500: hsl(262 68% 70%);
+  --color-violet-100: hsl(262 40% 22%);
+
+  --color-surface-0: hsl(222 32% 8%);
+  --color-surface-1: hsl(222 28% 12%);
+  --color-border: hsl(222 20% 20%);
+  --color-border-strong: hsl(222 20% 29%);
+  --color-ink: hsl(210 30% 95%);
+  --color-ink-muted: hsl(215 16% 68%);
+
+  --color-elevated: hsl(222 26% 15%);
+  --color-muted-surface: hsl(222 30% 10%);
+  --color-inverse-surface: hsl(222 22% 26%);
+  --color-primary-hover: hsl(226 88% 75%);
+  --color-secondary: hsl(222 22% 18%);
+  --color-secondary-foreground: hsl(210 30% 95%);
+  --color-overlay: hsl(222 47% 3% / 0.55);
+  --color-skeleton: hsl(222 22% 18%);
+  --color-interactive-surface: hsl(222 22% 16%);
+  --color-interactive-surface-hover: hsl(222 22% 21%);
+  --color-glow: hsl(226 88% 74% / 0.3);
+
+  --color-glass-from: rgba(255, 255, 255, 0.14);
+  --color-glass-to: rgba(255, 255, 255, 0.04);
+  --color-glass-border: rgba(255, 255, 255, 0.2);
+  --color-glass-shadow: rgba(0, 0, 0, 0.45);
+  --color-glass-glow: rgba(99, 102, 241, 0.35);
+  --color-glass-input: rgba(5, 12, 30, 0.32);
+  --color-glass-input-border: rgba(255, 255, 255, 0.2);
+
+  --shadow-1: 0 1px 2px hsl(0 0% 0% / 0.35), 0 1px 1px hsl(0 0% 0% / 0.25);
+  --shadow-2: 0 4px 10px hsl(0 0% 0% / 0.4), 0 2px 4px hsl(0 0% 0% / 0.28);
+  --shadow-3: 0 12px 28px hsl(0 0% 0% / 0.45), 0 4px 10px hsl(0 0% 0% / 0.32);
+}
+
+/* Respect prefers-reduced-motion at the CSS level too (AC-019, NFR-014) — belt-and-
+   braces alongside the JS usePrefersReducedMotion() helper Motion-driven components
+   already use, for any plain-CSS transition that isn't Motion-authored. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

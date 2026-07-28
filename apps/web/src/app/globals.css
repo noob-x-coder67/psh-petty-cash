@@ -1,4 +1,11 @@
 @import "tailwindcss";
+/* Without this, Tailwind's content scanner never sees packages/ui/src at all — every
+   @psh/ui utility class that "worked" before was doing so by coincidence, because the
+   exact same class string happened to also be used verbatim somewhere in apps/web/src
+   (e.g. bg-surface-1 is used directly in masthead.tsx). Confirmed via the compiled CSS
+   output: `truncate`/`min-w-0` (Select's line-clamp fix) never generated at all until
+   this was added, despite being correctly present in packages/ui/src/primitives/select.tsx. */
+@source "../../../../packages/ui/src/**/*.{ts,tsx}";
 @import "@psh/ui/tokens.css";
 
 body {

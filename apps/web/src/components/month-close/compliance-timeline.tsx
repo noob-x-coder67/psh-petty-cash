@@ -14,15 +14,31 @@ function toRibbonStatus(status: ComplianceMonth["status"]): ComplianceMonthStatu
   return "HELD";
 }
 
+const LEGEND: Array<{ status: ComplianceMonthStatus; dot: string }> = [
+  { status: "CLOSED", dot: "bg-emerald-500" },
+  { status: "OPEN", dot: "bg-ink-muted/40" },
+  { status: "HELD", dot: "bg-coral-500" },
+];
+
 export function ComplianceTimeline({ months }: { months: ComplianceMonth[] }) {
   return (
-    <div className="overflow-x-auto">
-      <ComplianceRibbon
-        months={months.map((month) => ({
-          label: `${MONTH_LABELS[month.month - 1]} ${String(month.year).slice(-2)}`,
-          status: toRibbonStatus(month.status),
-        }))}
-      />
+    <div className="flex flex-col gap-3">
+      <div className="overflow-x-auto">
+        <ComplianceRibbon
+          months={months.map((month) => ({
+            label: `${MONTH_LABELS[month.month - 1]} ${String(month.year).slice(-2)}`,
+            status: toRibbonStatus(month.status),
+          }))}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-3">
+        {LEGEND.map((item) => (
+          <span key={item.status} className="flex items-center gap-1.5 text-xs text-ink-muted">
+            <span aria-hidden className={`h-2 w-2 rounded-full ${item.dot}`} />
+            {item.status === "CLOSED" ? "Closed" : item.status === "OPEN" ? "Open" : "Held"}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

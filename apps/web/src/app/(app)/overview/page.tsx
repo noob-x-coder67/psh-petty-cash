@@ -11,7 +11,14 @@ import { serverApiFetch } from "../../../lib/server-api-client";
 export default async function OverviewPage() {
   try {
     const data = await serverApiFetch<DashboardFinanceResponse>("/dashboard/finance");
-    return <CommandCenter data={data} />;
+    // This page is server-rendered per request with no cache directive, so "now" at
+    // render time genuinely is when this data was fetched — not a fabricated figure.
+    const asOf = new Intl.DateTimeFormat("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      timeZone: "Asia/Karachi",
+    }).format(new Date());
+    return <CommandCenter data={data} asOf={asOf} />;
   } catch (error) {
     if (error instanceof ApiError && error.status === 403) {
       return (
