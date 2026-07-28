@@ -239,7 +239,10 @@ export class ExpensesService {
       const fields = {
         ...(input.vendorName !== undefined && { vendorName: input.vendorName }),
         ...(input.vendorBillNo !== undefined && { vendorBillNo: input.vendorBillNo }),
-        ...(input.billDate !== undefined && { billDate: new Date(input.billDate) }),
+        // input.billDate === "" means the picker was cleared, not "leave unchanged" — only
+        // an omitted (undefined) billDate means that. new Date("") is an Invalid Date, so
+        // an explicit "" must map to null (clearing the stored date), not a bad Date object.
+        ...(input.billDate !== undefined && { billDate: input.billDate ? new Date(input.billDate) : null }),
         ...(input.justification !== undefined && { justification: input.justification }),
         ...(input.missingBillReason !== undefined && { missingBillReason: input.missingBillReason }),
       };

@@ -3,6 +3,20 @@ import { AttachmentSchema } from "./attachments.js";
 
 const decimalString = z.string().regex(/^\d+(\.\d{1,2})?$/, "must be a decimal amount with up to 2 places");
 
+// HTML <input type="date"> emits "" when left blank, not undefined — z.iso.date().optional()
+// only ever treats undefined as "not provided", so a genuinely optional date field (bill
+// date is optional; BR-005 only requires expenseDate) failed with "Invalid ISO date" the
+// moment a real form bound straight to it, blocking every save that left it blank. Built
+// from z.string().optional() with only a .refine() (no .transform()) so the schema's input
+// and output types stay identical — either one breaks zodResolver's type inference against
+// useForm<CreateVoucherRequest> (.preprocess types the input as `unknown`; .transform makes
+// the output key required-but-possibly-undefined instead of optional). Consumers already
+// treat an empty/falsy billDate as "not provided" downstream (expenses.service.ts).
+const optionalIsoDate = z
+  .string()
+  .optional()
+  .refine((value) => !value || z.iso.date().safeParse(value).success, { message: "Invalid ISO date" });
+
 export const ExpenseLineInputSchema = z.object({
   description: z.string().min(1),
   category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
@@ -15,7 +29,7 @@ export const CreateVoucherRequestSchema = z
   .object({
     unitId: z.string().uuid(),
     expenseDate: z.iso.date(),
-    billDate: z.iso.date().optional(),
+    billDate: optionalIsoDate,
     vendorName: z.string().min(1),
     vendorBillNo: z.string().optional(),
     justification: z.string().min(10),
@@ -24,17 +38,29 @@ export const CreateVoucherRequestSchema = z
     missingBillReason: z.string().optional(),
     lines: z.array(ExpenseLineInputSchema).min(1),
   })
-  .refine((data) => data.hasBill || Boolean(data.missingBillReason), {
-    message: "missingBillReason is required when hasBill is false",
-    path: ["missingBillReason"],
-  })
-  .refine(
-    (data) =>
-      data.lines.every(
-        (line) => line.category !== "OTHER" || (line.otherExplanation?.trim().length ?? 0) >= 5,
-      ),
-    { message: "OTHER category lines require an explanation of at least 5 characters", path: ["lines"] },
-  );
+  .superRefine((data, ctx) => {
+    if (!data.hasBill && !data.missingBillReason) {
+      ctx.addIssue({
+        code: "custom",
+        message: "missingBillReason is required when hasBill is false",
+        path: ["missingBillReason"],
+      });
+    }
+
+    // BR-007: attached per-line (not to the "lines" array root) so the form can render it
+    // inline next to the actual "Other explanation" input it's about — a prior version used
+    // path: ["lines"], which no field in the UI reads, so this failure blocked saving with
+    // zero visible feedback regardless of the "Bill available" checkbox state.
+    data.lines.forEach((line, index) => {
+      if (line.category === "OTHER" && (line.otherExplanation?.trim().length ?? 0) < 5) {
+        ctx.addIssue({
+          code: "custom",
+          message: "OTHER category lines require an explanation of at least 5 characters",
+          path: ["lines", index, "otherExplanation"],
+        });
+      }
+    });
+  });
 export type CreateVoucherRequest = z.infer<typeof CreateVoucherRequestSchema>;
 
 // Only non-financial fields are directly editable (BR-020: fix amounts via reversal +
@@ -43,7 +69,7 @@ export const EditVoucherRequestSchema = z.object({
   reason: z.string().min(10),
   vendorName: z.string().min(1).optional(),
   vendorBillNo: z.string().optional(),
-  billDate: z.iso.date().optional(),
+  billDate: optionalIsoDate,
   justification: z.string().min(10).optional(),
   missingBillReason: z.string().optional(),
 });
