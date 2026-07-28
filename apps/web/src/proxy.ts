@@ -31,5 +31,11 @@ export function proxy(request: NextRequest): NextResponse {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api).*)"],
+  // psh-logo.png (apps/web/public/) must stay excluded alongside favicon.ico: next/image's
+  // optimizer fetches public/ source files via an internal HTTP request on this same
+  // server, which without this exclusion gets caught by the auth check above and
+  // redirected to /login — Next then reports "not a valid image" for what was actually
+  // an HTML redirect response, not a bad file. Any future public/ asset referenced by
+  // <Image>/<img> on a page needs the same treatment here.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|psh-logo.png|api).*)"],
 };

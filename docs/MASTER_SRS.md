@@ -544,7 +544,7 @@ Border	Low-contrast cool gray, strengthened on focus
 Amount Format	PKR with comma grouping and tabular figures
 Focus	2px accessible accent outline
 Density	Comfortable default; compact tables optional
-Theme	Light-first; dark theme supported after core UAT
+Theme	Light and dark, both first-class; theme choice persisted client-side (ADR-0004: pulled forward from the original post-UAT plan)
 11.5 Responsive Model
 Viewport	Navigation	Layout
 Desktop ≥1280	Masthead + full horizontal tabs	12-column adaptive grid
