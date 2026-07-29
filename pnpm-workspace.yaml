@@ -1,6 +1,14 @@
 packages:
   - "apps/*"
   - "packages/*"
+# Forces patched versions of two vulnerable transitive deps buried in exceljs's own
+# dependency tree (archiver/unzipper/uuid) — brace-expansion DoS (GHSA-mh99-v99m-4gvg)
+# and uuid's missing buffer bounds check (GHSA-w5hq-g745-h8pq). Both are stable, narrow
+# utility APIs; safe to force outside exceljs's own declared ranges. Revisit if exceljs
+# ships a release that pulls these in natively.
+overrides:
+  brace-expansion: ">=5.0.8"
+  uuid: ">=11.1.1"
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
@@ -27,3 +35,20 @@ minimumReleaseAgeExclude:
   - '@turbo/windows-arm64@2.10.7'
   - next@16.2.12
   - turbo@2.10.7
+# 2026-07-29: these 4 advisories are all inside next@16.2.12's own vendored sharp/postcss
+# (confirmed via `pnpm why sharp`/`pnpm why postcss` — apps/web>next>sharp,
+# apps/web>next>postcss), not our own declared dependency versions (apps/api's direct
+# sharp and apps/web's direct postcss devDependency are both already patched). Not
+# safely fixable via an override without risking breaking Next's internal image-
+# optimization/build pipeline — unfixable here until Next.js ships a release with
+# updated internal deps. Revisit this list on the next Next.js upgrade.
+#   GHSA-f88m-g3jw-g9cj — sharp/libvips (high)
+#   GHSA-6g55-p6wh-862q — postcss arbitrary file read via sourceMappingURL (high)
+#   GHSA-r28c-9q8g-f849 — postcss path traversal via source-map auto-loading (high)
+#   GHSA-qx2v-qp2m-jg93 — postcss XSS via unescaped </style> in stringify output (moderate)
+auditConfig:
+  ignoreGhsas:
+    - GHSA-f88m-g3jw-g9cj
+    - GHSA-6g55-p6wh-862q
+    - GHSA-r28c-9q8g-f849
+    - GHSA-qx2v-qp2m-jg93

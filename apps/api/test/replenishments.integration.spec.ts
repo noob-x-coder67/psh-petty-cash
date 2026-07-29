@@ -38,9 +38,13 @@ async function loginAs(email: string): Promise<string[]> {
   return cookies;
 }
 
-// Randomized per run for the same reason month-close.integration.spec.ts randomizes its
-// test year — these tests write real, persistent monthly_closings rows with no teardown.
-const BASE_YEAR = 2400 + Math.floor(Math.random() * 500);
+// Computed in beforeAll, not randomized — see month-close.integration.spec.ts's beforeAll
+// for the full reasoning. monthly_closings has DELETE revoked from psh_app by design (a
+// genuine financial-record immutability rule, migration 20260727101836), so this can't be
+// reset by deletion; instead every run's BASE_YEAR is computed strictly greater than any
+// year PSH-COE's monthly_closings has ever contained, which is permanent isolation
+// without deleting anything.
+let BASE_YEAR: number;
 
 function ym(monthOffset: number): { year: number; month: number } {
   // monthOffset 0 => (BASE_YEAR, 1); handles rollover the same way the app does.
@@ -75,6 +79,22 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
+
+  // The three-month-compliance checks (ym(1)/ym(2)/ym(3) writes, ym(10)/ym(20) "never
+  // touched" reads) are the only part of this file vulnerable to cross-run collision —
+  // computing BASE_YEAR past PSH-COE's own historical max fixes that permanently (see
+  // the comment above). The `replenishments` rows and ledger entries these tests also
+  // write need no such fix: every assertion on them is either scoped to a specific
+  // just-created id/referenceNo or delta-based (`after.cachedBalance` vs
+  // `before.cachedBalance.plus(amount)`), never an absolute or aggregate count, so
+  // accumulating history in those tables is harmless.
+  const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
+  const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
+  const maxYear = await prisma.monthlyClosing.aggregate({
+    where: { accountId: account.id },
+    _max: { periodYear: true },
+  });
+  BASE_YEAR = (maxYear._max.periodYear ?? 2399) + 1;
 });
 
 afterAll(async () => {

@@ -49,6 +49,28 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
+
+  // RPT-09/RPT-10 below used to randomize their base year, which only *probably*
+  // avoided colliding with a past run's leftover state in the same bounded range — over
+  // enough runs that collision became routine rather than rare. monthly_closings has
+  // DELETE revoked from psh_app by design (a genuine financial-record immutability rule,
+  // migration 20260727101836), so this can't be fixed by deleting old rows; instead
+  // RPT_BASE_YEAR (below) is computed strictly greater than any year FTZ-RAJA/REHAB-CHK's
+  // monthly_closings has ever contained — permanent isolation without deleting anything.
+  const [ftzRaja, rehabChk] = await Promise.all([
+    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "FTZ-RAJA" } }),
+    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "REHAB-CHK" } }),
+  ]);
+  const [ftzRajaAccount, rehabChkAccount] = await Promise.all([
+    prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: ftzRaja.id } }),
+    prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: rehabChk.id } }),
+  ]);
+  const maxYear = await prisma.monthlyClosing.aggregate({
+    where: { accountId: { in: [ftzRajaAccount.id, rehabChkAccount.id] } },
+    _max: { periodYear: true },
+  });
+  // RPT-09 writes to (RPT_BASE_YEAR - 1); +2 keeps that strictly past the historical max.
+  RPT_BASE_YEAR = (maxYear._max.periodYear ?? 4998) + 2;
 });
 
 afterAll(async () => {
@@ -143,16 +165,11 @@ describe("RPT-08 Allocation and Replenishment", () => {
   });
 });
 
-// RPT-09/10 (Phase 7, deferred from Phase 6 per ADR-0003) — randomized period block,
-// same reasoning as month-close/replenishments.integration.spec.ts: these tests write
-// real, persistent monthly_closings rows with no teardown, so a fixed period would only
-// be fresh the first time the suite ever ran. Deliberately a disjoint range from
-// month-close's (2200-2899) and replenishments' (2400-2899) own random blocks, and on
-// units neither of those files touches (FTZ-RAJA/REHAB-CHK, not PSH-BWL/PSH-COE) — a
-// shared unit *and* overlapping year once caused this file's RPT-09 setup to
-// accidentally close one of replenishments.integration.spec.ts's required compliance
-// months out from under it.
-const RPT_BASE_YEAR = 5000 + Math.floor(Math.random() * 300);
+// RPT-09/10 (Phase 7, deferred from Phase 6 per ADR-0003) — computed in beforeAll, not
+// randomized (see that comment for the full reasoning). Units are disjoint from
+// month-close's (PSH-BWL/PSH-SOH) and replenishments' (PSH-COE) own fixture units, so no
+// cross-file interference regardless of year value.
+let RPT_BASE_YEAR: number;
 
 async function recordAndCloseMonth(
   app: INestApplication,

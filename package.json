@@ -18,7 +18,8 @@
     "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
     "db:seed": "tsx prisma/seed.ts",
     "db:rebuild-balances": "tsx scripts/rebuild-balances.ts",
-    "test:int": "turbo run test:int"
+    "test:int": "turbo run test:int",
+    "audit": "pnpm audit --prod --audit-level=high"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

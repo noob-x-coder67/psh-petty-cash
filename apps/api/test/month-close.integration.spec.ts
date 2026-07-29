@@ -35,25 +35,48 @@ async function loginAs(email: string): Promise<string[]> {
   return cookies;
 }
 
+// Computed in beforeAll, not randomized and not a fixed literal — see the comment there.
+let TEST_YEAR: number;
+const TEST_MONTH = 3;
+
 beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   app = moduleRef.createNestApplication();
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
+
+  // monthly_closings is a financial record with DELETE revoked from the app's own DB
+  // role (psh_app) by design (migration 20260727101836, mirroring the ledger/audit-log
+  // immutability rule) — so resetting this fixture by deleting it is not an option, and
+  // picking "a random future year" was never actually safe: reused indefinitely against
+  // a database with no teardown, a fixed or randomized year only *probably* avoids
+  // colliding with a past run's leftover state, and that probability gets worse every
+  // time this suite runs (verified against this exact failure: a past run's "reopen +
+  // recount" step left PSH-BWL's row OPEN with a real physicalCashCount set, which a
+  // later run's "before any cash count exists" test found instead of a truly untouched
+  // period). Computing one past whatever this account has ever used is genuine,
+  // permanent isolation instead: every run's fixture year is strictly greater than any
+  // year this account's monthly_closings has ever contained, so it can never collide
+  // with past state, without deleting anything.
+  const [bwl, soh] = await Promise.all([
+    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-BWL" } }),
+    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } }),
+  ]);
+  const [bwlAccount, sohAccount] = await Promise.all([
+    prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: bwl.id } }),
+    prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: soh.id } }),
+  ]);
+  const maxYear = await prisma.monthlyClosing.aggregate({
+    where: { accountId: { in: [bwlAccount.id, sohAccount.id] } },
+    _max: { periodYear: true },
+  });
+  TEST_YEAR = (maxYear._max.periodYear ?? 2199) + 1;
 });
 
 afterAll(async () => {
   await app.close();
 });
-
-// Randomized per run (not a fixed literal) — this suite writes real, persistent
-// monthly_closings rows against the shared dev database with no teardown, so reusing a
-// fixed (unit, year, month) would only be "fresh" the first time the suite ever ran and
-// would find pre-existing state (e.g. already CLOSED) on every rerun after that. A
-// far-future, randomized year keeps every run's fixture period effectively unique.
-const TEST_YEAR = 2200 + Math.floor(Math.random() * 700);
-const TEST_MONTH = 3;
 
 describe("GET /monthly-close/:unitId/:year/:month — before any cash count exists", () => {
   it("returns a virtual OPEN row with a live expected balance", async () => {
