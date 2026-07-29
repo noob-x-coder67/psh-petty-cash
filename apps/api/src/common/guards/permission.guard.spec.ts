@@ -2,7 +2,7 @@ import { ForbiddenException, type ExecutionContext } from "@nestjs/common";
 import type { Reflector } from "@nestjs/core";
 import { describe, expect, it, vi } from "vitest";
 import type { AuthenticatedUser } from "../types/authenticated-user";
-import { RolesGuard } from "./roles.guard";
+import { PermissionGuard } from "./permission.guard";
 
 function makeContext(user?: AuthenticatedUser): ExecutionContext {
   return {
@@ -12,10 +12,9 @@ function makeContext(user?: AuthenticatedUser): ExecutionContext {
   } as unknown as ExecutionContext;
 }
 
-function makeReflector(roles?: string[], permission?: string): Reflector {
+function makeReflector(permission?: string): Reflector {
   return {
     getAllAndOverride: vi.fn((key: string) => {
-      if (key === "roles") return roles;
       if (key === "requiresPermission") return permission;
       return undefined;
     }),
@@ -31,39 +30,24 @@ const baseUser: AuthenticatedUser = {
   unitScope: { all: false, unitIds: ["unit-1"] },
 };
 
-describe("RolesGuard", () => {
-  it("allows when no roles or permission metadata is present", () => {
-    const guard = new RolesGuard(makeReflector());
+describe("PermissionGuard", () => {
+  it("allows when no permission metadata is present", () => {
+    const guard = new PermissionGuard(makeReflector());
     expect(guard.canActivate(makeContext(baseUser))).toBe(true);
   });
 
-  it("throws when no user is on the request but a role is required", () => {
-    const guard = new RolesGuard(makeReflector(["SUPER_ADMIN"]));
+  it("throws when no user is on the request but a permission is required", () => {
+    const guard = new PermissionGuard(makeReflector("month.close"));
     expect(() => guard.canActivate(makeContext(undefined))).toThrow(ForbiddenException);
   });
 
-  it("throws when the user lacks all required roles", () => {
-    const guard = new RolesGuard(makeReflector(["SUPER_ADMIN", "FINANCE_MANAGER"]));
-    expect(() => guard.canActivate(makeContext(baseUser))).toThrow(ForbiddenException);
-  });
-
-  it("allows when the user has one of the required roles", () => {
-    const guard = new RolesGuard(makeReflector(["UNIT_USER"]));
-    expect(guard.canActivate(makeContext(baseUser))).toBe(true);
-  });
-
   it("throws when the user lacks the required permission", () => {
-    const guard = new RolesGuard(makeReflector(undefined, "month.close"));
+    const guard = new PermissionGuard(makeReflector("month.close"));
     expect(() => guard.canActivate(makeContext(baseUser))).toThrow(ForbiddenException);
   });
 
   it("allows when the user has the required permission", () => {
-    const guard = new RolesGuard(makeReflector(undefined, "expense.create"));
+    const guard = new PermissionGuard(makeReflector("expense.create"));
     expect(guard.canActivate(makeContext(baseUser))).toBe(true);
-  });
-
-  it("requires both role and permission when both are set", () => {
-    const guard = new RolesGuard(makeReflector(["UNIT_USER"], "month.close"));
-    expect(() => guard.canActivate(makeContext(baseUser))).toThrow(ForbiddenException);
   });
 });

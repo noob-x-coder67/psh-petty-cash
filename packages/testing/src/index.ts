@@ -55,23 +55,17 @@ export function findControllerRoutes(controllers: Constructor[]): ControllerRout
 
 export interface RouteRequirement extends ControllerRoute {
   requiredPermission: string | undefined;
-  requiredRoles: string[] | undefined;
 }
 
-/** Per-route permission/role metadata for every controller route — the caller supplies
- * its own decorators' metadata key strings (permissionMetadataKey/rolesMetadataKey)
- * rather than this package importing them from apps/api's decorator modules: apps/api
- * depends on @psh/testing (to use this in its own tests), so the reverse import would be
- * a circular package dependency. This keeps the package a generic NestJS-reflection
- * utility, not coupled to one app's specific decorator implementation. */
-export function buildPermissionMatrix(
-  controllers: Constructor[],
-  permissionMetadataKey: string,
-  rolesMetadataKey: string,
-): RouteRequirement[] {
+/** Per-route permission metadata for every controller route — the caller supplies its
+ * own decorator's metadata key string (permissionMetadataKey) rather than this package
+ * importing it from apps/api's decorator module: apps/api depends on @psh/testing (to
+ * use this in its own tests), so the reverse import would be a circular package
+ * dependency. This keeps the package a generic NestJS-reflection utility, not coupled to
+ * one app's specific decorator implementation. */
+export function buildPermissionMatrix(controllers: Constructor[], permissionMetadataKey: string): RouteRequirement[] {
   return findControllerRoutes(controllers).map((route) => ({
     ...route,
     requiredPermission: Reflect.getMetadata(permissionMetadataKey, route.handler) as string | undefined,
-    requiredRoles: Reflect.getMetadata(rolesMetadataKey, route.handler) as string[] | undefined,
   }));
 }

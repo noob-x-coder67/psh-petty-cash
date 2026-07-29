@@ -5,7 +5,7 @@ import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 import { AuditLogRepository } from "./audit/audit-log.repository";
 import { AuthContextRepository } from "./auth/auth-context.repository";
 import { JwtAuthGuard } from "./guards/jwt-auth.guard";
-import { RolesGuard } from "./guards/roles.guard";
+import { PermissionGuard } from "./guards/permission.guard";
 import { UnitScopeGuard } from "./guards/unit-scope.guard";
 import { LedgerPostingRepository } from "./ledger/ledger-posting.repository";
 import { PrismaService } from "./prisma/prisma.service";
@@ -32,7 +32,7 @@ if (!authSecret) {
     AuditLogRepository,
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_GUARD, useClass: UnitScopeGuard },
   ],
   exports: [PrismaService, AuthContextRepository, LedgerPostingRepository, AuditLogRepository, JwtModule],

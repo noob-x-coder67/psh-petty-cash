@@ -23,8 +23,7 @@ import { ExportsController } from "../../modules/reports/exports.controller";
 import { PresetsController } from "../../modules/reports/presets.controller";
 import { ReportsController } from "../../modules/reports/reports.controller";
 import { REQUIRES_PERMISSION_KEY } from "../decorators/requires-permission.decorator";
-import { ROLES_KEY } from "../decorators/roles.decorator";
-import { RolesGuard } from "./roles.guard";
+import { PermissionGuard } from "./permission.guard";
 import type { AuthenticatedUser } from "../types/authenticated-user";
 
 // Same explicit list as audit-coverage.spec.ts, deliberately not shared between the two
@@ -58,8 +57,8 @@ for (const [permissionKey, roleKeys] of Object.entries(ROLE_PERMISSIONS)) {
 // Deliberately NOT going through HTTP/login (unlike every *.integration.spec.ts file):
 // the seed has no demo user for UNIT_INCHARGE or SUPPORT (prisma/seed-data.ts's DEMO_USERS),
 // so an HTTP-based matrix could never cover all 7 roles. A synthetic AuthenticatedUser
-// built directly from ROLE_PERMISSIONS, fed straight into RolesGuard.canActivate, covers
-// every role regardless of whether a demo account for it exists.
+// built directly from ROLE_PERMISSIONS, fed straight into PermissionGuard.canActivate,
+// covers every role regardless of whether a demo account for it exists.
 function fixtureUser(roleKey: RoleKey): AuthenticatedUser {
   return {
     id: `fixture-${roleKey}`,
@@ -79,10 +78,10 @@ function fakeContext(handler: (...args: unknown[]) => unknown, controller: Const
   } as unknown as ExecutionContext;
 }
 
-// A real Reflector, not a fake one (unlike roles.guard.spec.ts's own unit test) — this
-// needs Nest's actual Reflect.getMetadata lookup against real @RequiresPermission/@Roles
+// A real Reflector, not a fake one (unlike permission.guard.spec.ts's own unit test) —
+// this needs Nest's actual Reflect.getMetadata lookup against real @RequiresPermission
 // metadata attached to real controller methods, not a hand-rolled stand-in.
-const guard = new RolesGuard({
+const guard = new PermissionGuard({
   getAllAndOverride: (key: string, targets: unknown[]) => {
     for (const target of targets) {
       const value = Reflect.getMetadata(key, target as object);
@@ -93,7 +92,7 @@ const guard = new RolesGuard({
 } as unknown as Reflector);
 
 describe("permission matrix — every (role, route) pair matches ROLE_PERMISSIONS (prisma/seed-data.ts)", () => {
-  const matrix = buildPermissionMatrix(ALL_CONTROLLERS, REQUIRES_PERMISSION_KEY, ROLES_KEY);
+  const matrix = buildPermissionMatrix(ALL_CONTROLLERS, REQUIRES_PERMISSION_KEY);
 
   it("the walk actually found routes to test (sanity: an empty matrix would pass vacuously)", () => {
     expect(matrix.length).toBeGreaterThan(0);
@@ -113,9 +112,7 @@ describe("permission matrix — every (role, route) pair matches ROLE_PERMISSION
     describe(`${role.key}`, () => {
       for (const route of matrix) {
         const rolePermissions = PERMISSIONS_BY_ROLE.get(role.key) ?? new Set<string>();
-        const expectedAllowed =
-          (!route.requiredRoles || route.requiredRoles.includes(role.key)) &&
-          (!route.requiredPermission || rolePermissions.has(route.requiredPermission));
+        const expectedAllowed = !route.requiredPermission || rolePermissions.has(route.requiredPermission);
 
         it(`${expectedAllowed ? "is allowed" : "is denied"} on ${route.controllerName}.${route.methodName}`, () => {
           const user = fixtureUser(role.key);
