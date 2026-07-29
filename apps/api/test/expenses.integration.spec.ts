@@ -458,3 +458,67 @@ describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
     expect(outOfRangeRes.body).toHaveLength(0);
   });
 });
+
+describe("closed-period enforcement (assertPeriodNotClosed, FR-CLS territory)", () => {
+  // PSH-SUK, not PSH-SOH/PSH-BWL — those two already carry month-close.integration.spec.ts's
+  // own close/reopen lifecycle fixture. A dedicated MAX(periodYear for this account) + 1
+  // period is genuine, permanent isolation (same reasoning as month-close.integration.spec.ts's
+  // own TEST_YEAR) — never colliding with any period this account's monthly_closings has ever
+  // held, without deleting anything (DELETE is revoked on monthly_closings by design).
+  let closedYear: number;
+  const closedMonth: number = 6;
+
+  beforeAll(async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
+    const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
+    const maxYear = await prisma.monthlyClosing.aggregate({
+      where: { accountId: account.id },
+      _max: { periodYear: true },
+    });
+    closedYear = (maxYear._max.periodYear ?? 2299) + 1;
+
+    const cookies = await loginAs("financemanager@psh.local");
+    const before = await request(app.getHttpServer())
+      .get(`/monthly-close/${unit.id}/${closedYear}/${closedMonth}`)
+      .set("Cookie", cookies)
+      .expect(200);
+    const cashCount = await request(app.getHttpServer())
+      .post("/monthly-close")
+      .set("Cookie", cookies)
+      .send({
+        unitId: unit.id,
+        periodYear: closedYear,
+        periodMonth: closedMonth,
+        physicalCashCount: before.body.expectedBalance,
+      })
+      .expect(201);
+    await request(app.getHttpServer())
+      .post(`/monthly-close/${cashCount.body.id}/close`)
+      .set("Cookie", cookies)
+      .expect(201);
+  });
+
+  it("rejects a new voucher dated into the closed period with 409", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
+    const cookies = await loginAs("user.sukkur@psh.local");
+    const dated = `${closedYear}-${String(closedMonth).padStart(2, "0")}-15`;
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send(baseVoucherBody(unit.id, { expenseDate: dated }))
+      .expect(409);
+  });
+
+  it("still accepts a voucher dated into a different, still-open period on the same account", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
+    const cookies = await loginAs("user.sukkur@psh.local");
+    const openMonth = closedMonth === 12 ? 1 : closedMonth + 1;
+    const openYear = closedMonth === 12 ? closedYear + 1 : closedYear;
+    const dated = `${openYear}-${String(openMonth).padStart(2, "0")}-15`;
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send(baseVoucherBody(unit.id, { expenseDate: dated }))
+      .expect(201);
+  });
+});

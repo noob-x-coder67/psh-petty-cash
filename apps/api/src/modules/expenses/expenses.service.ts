@@ -11,6 +11,7 @@ import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repo
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AccountsRepository } from "../accounts/accounts.repository";
+import { MonthCloseRepository } from "../month-close/month-close.repository";
 import {
   ExpensesRepository,
   type ExpenseVoucherWithLines,
@@ -69,6 +70,7 @@ export class ExpensesService {
     private readonly accountsRepository: AccountsRepository,
     private readonly ledgerPostingRepository: LedgerPostingRepository,
     private readonly auditLogRepository: AuditLogRepository,
+    private readonly monthCloseRepository: MonthCloseRepository,
     private readonly prisma: PrismaService,
   ) {}
 
@@ -120,7 +122,7 @@ export class ExpensesService {
       // row locks are reentrant for the holder within one transaction).
       await tx.$queryRaw`SELECT id FROM petty_cash_accounts WHERE id = ${account.id}::uuid FOR UPDATE`;
 
-      this.assertPeriodNotClosed(account.id, expenseDate);
+      await this.assertPeriodNotClosed(account.id, expenseDate, tx);
 
       const year = expenseDate.getUTCFullYear();
       const lastSeq = await this.expensesRepository.incrementVoucherCounter(account.id, year, tx);
@@ -449,10 +451,21 @@ export class ExpensesService {
     }
   }
 
-  // monthly_closings doesn't exist until Phase 7 — this guard is a documented permanent
-  // no-op until then (Build Plan §2.5's "period not CLOSED" check), not a silently
-  // skipped one.
-  private assertPeriodNotClosed(_accountId: string, _expenseDate: Date): void {
-    // Intentionally empty until Phase 7.
+  // Runs inside the caller's transaction (against tx, not this.prisma) — the account is
+  // already row-locked by the time this is called, so the check must happen in the same
+  // transaction to avoid a race against a concurrent month-close. periodYear/periodMonth
+  // use the same getUTCFullYear/getUTCMonth()+1 convention createVoucher already applies
+  // to expenseDate one line later for voucher numbering (expenseDate is a DATE column
+  // value with no time component, so no Asia/Karachi conversion applies here — that's
+  // only needed when deriving a period from "now", not from an already-a-DATE column).
+  private async assertPeriodNotClosed(accountId: string, expenseDate: Date, tx: Prisma.TransactionClient): Promise<void> {
+    const periodYear = expenseDate.getUTCFullYear();
+    const periodMonth = expenseDate.getUTCMonth() + 1;
+    const closing = await this.monthCloseRepository.findClosing(accountId, periodYear, periodMonth, tx);
+    if (closing?.status === "CLOSED") {
+      throw new ConflictException(
+        `Cannot create a voucher in ${periodYear}-${String(periodMonth).padStart(2, "0")} — this period is closed. Reopen the month first.`,
+      );
+    }
   }
 }

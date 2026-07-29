@@ -2,6 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { Prisma, type MonthlyClosingStatus } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
 
+type Client = PrismaService | Prisma.TransactionClient;
+
 const CLOSING_INCLUDE = {
   account: { include: { unit: true } },
   counter: true,
@@ -30,8 +32,9 @@ export class MonthCloseRepository {
     accountId: string,
     periodYear: number,
     periodMonth: number,
+    client: Client = this.prisma,
   ): Promise<MonthlyClosingWithRelations | null> {
-    return this.prisma.monthlyClosing.findUnique({
+    return client.monthlyClosing.findUnique({
       where: { accountId_periodYear_periodMonth: { accountId, periodYear, periodMonth } },
       include: CLOSING_INCLUDE,
     });
