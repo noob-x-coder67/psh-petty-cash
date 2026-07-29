@@ -3,7 +3,7 @@ import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../../../prisma/seed";
+import { DEMO_PASSWORD } from "../../../prisma/seed-data";
 import { AppModule } from "../src/app.module";
 
 // Assumes `pnpm db:migrate` and `pnpm db:seed` have already been run against

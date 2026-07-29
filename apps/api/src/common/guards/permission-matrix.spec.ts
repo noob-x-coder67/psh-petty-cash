@@ -4,7 +4,11 @@ import type { Reflector } from "@nestjs/core";
 import type { RoleKey } from "@prisma/client";
 import { buildPermissionMatrix, type Constructor } from "@psh/testing";
 import { describe, expect, it } from "vitest";
-import { PERMISSIONS, ROLE_PERMISSIONS, ROLES } from "../../../../../prisma/seed";
+import { PERMISSIONS, ROLE_PERMISSIONS, ROLES } from "../../../../../prisma/seed-data";
+// Pure-data module — deliberately not "../../../../../prisma/seed" (the actual seeding
+// script), which runs its full main() as an unconditional side effect of being imported
+// and calls process.exit(1) on a failed DB connection. This spec has no database at all
+// in CI's plain unit-test job, so importing the script itself would crash the whole run.
 import { AccountsController } from "../../modules/accounts/accounts.controller";
 import { AllocationsController } from "../../modules/allocations/allocations.controller";
 import { AttachmentsController } from "../../modules/attachments/attachments.controller";
@@ -42,7 +46,7 @@ const ALL_CONTROLLERS: Constructor[] = [
   PresetsController,
 ];
 
-// Inverts ROLE_PERMISSIONS (permission -> roles[], as prisma/seed.ts defines it) into
+// Inverts ROLE_PERMISSIONS (permission -> roles[], as prisma/seed-data.ts defines it) into
 // role -> permissions[], since a synthetic AuthenticatedUser needs its full granted set.
 const PERMISSIONS_BY_ROLE = new Map<RoleKey, Set<string>>(ROLES.map((role) => [role.key, new Set<string>()]));
 for (const [permissionKey, roleKeys] of Object.entries(ROLE_PERMISSIONS)) {
@@ -52,7 +56,7 @@ for (const [permissionKey, roleKeys] of Object.entries(ROLE_PERMISSIONS)) {
 }
 
 // Deliberately NOT going through HTTP/login (unlike every *.integration.spec.ts file):
-// the seed has no demo user for UNIT_INCHARGE or SUPPORT (prisma/seed.ts's DEMO_USERS),
+// the seed has no demo user for UNIT_INCHARGE or SUPPORT (prisma/seed-data.ts's DEMO_USERS),
 // so an HTTP-based matrix could never cover all 7 roles. A synthetic AuthenticatedUser
 // built directly from ROLE_PERMISSIONS, fed straight into RolesGuard.canActivate, covers
 // every role regardless of whether a demo account for it exists.
@@ -88,7 +92,7 @@ const guard = new RolesGuard({
   },
 } as unknown as Reflector);
 
-describe("permission matrix — every (role, route) pair matches ROLE_PERMISSIONS (prisma/seed.ts)", () => {
+describe("permission matrix — every (role, route) pair matches ROLE_PERMISSIONS (prisma/seed-data.ts)", () => {
   const matrix = buildPermissionMatrix(ALL_CONTROLLERS, REQUIRES_PERMISSION_KEY, ROLES_KEY);
 
   it("the walk actually found routes to test (sanity: an empty matrix would pass vacuously)", () => {

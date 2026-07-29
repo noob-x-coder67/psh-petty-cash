@@ -3,7 +3,7 @@ import { Test } from "@nestjs/testing";
 import cookieParser from "cookie-parser";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../../../prisma/seed";
+import { DEMO_PASSWORD } from "../../../prisma/seed-data";
 import { AppModule } from "../src/app.module";
 
 // SRS §12.8 "saved presets per Finance user". The first test in this file exists

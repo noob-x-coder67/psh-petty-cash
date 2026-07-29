@@ -4,7 +4,7 @@ import cookieParser from "cookie-parser";
 import request from "supertest";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../../../prisma/seed";
+import { DEMO_PASSWORD } from "../../../prisma/seed-data";
 import { AppModule } from "../src/app.module";
 import { AttachmentsService } from "../src/modules/attachments/attachments.service";
 import { PrismaService } from "../src/common/prisma/prisma.service";

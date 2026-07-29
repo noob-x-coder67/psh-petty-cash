@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_USERS, PERMISSIONS, ROLE_PERMISSIONS, ROLES, UNITS } from "../../../prisma/seed";
+import { DEMO_USERS, PERMISSIONS, ROLE_PERMISSIONS, ROLES, UNITS } from "../../../prisma/seed-data";
 
 // Assumes `pnpm db:migrate` and `pnpm db:seed` have already been run against
 // DATABASE_URL — this suite only reads/probes, it does not seed.

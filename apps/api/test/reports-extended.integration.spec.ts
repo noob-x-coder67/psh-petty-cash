@@ -5,7 +5,7 @@ import { Prisma } from "@prisma/client";
 import cookieParser from "cookie-parser";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { DEMO_PASSWORD } from "../../../prisma/seed";
+import { DEMO_PASSWORD } from "../../../prisma/seed-data";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/common/prisma/prisma.service";
 
@@ -321,7 +321,7 @@ describe("RPT-12 Monthly Attachment Index", () => {
 describe("RPT-13 User Activity", () => {
   it("entries count for a known user matches a direct count of their vouchers", async () => {
     // enteredBy is only ever a UNIT_USER/UNIT_INCHARGE — expense.create isn't granted to
-    // SUPER_ADMIN (see ROLE_PERMISSIONS in prisma/seed.ts) — so a user who structurally
+    // SUPER_ADMIN (see ROLE_PERMISSIONS in prisma/seed-data.ts) — so a user who structurally
     // can never own a voucher was never a valid target here, and this only ever passed
     // because the old shared dev database happened to carry incidental superadmin-authored
     // rows from unrelated manual testing. Create a real fixture voucher for a user who can
