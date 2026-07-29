@@ -10,8 +10,22 @@ import { AppModule } from "./app.module";
 // shape) — set directly rather than mis-configure a helmet option that no longer exists.
 const PERMISSIONS_POLICY = "geolocation=(), camera=(), microphone=(), payment=(), usb=()";
 
+// Same fail-fast precedent as common.module.ts's AUTH_SECRET check — CORS_ORIGINS is
+// documented in .env.example but was never actually read anywhere until now; refusing
+// to boot with no explicit allowlist beats silently falling back to "no CORS" (same
+// origin only, confusing to debug) or "allow everything" (a real vulnerability).
+const corsOrigins = process.env.CORS_ORIGINS;
+if (!corsOrigins) {
+  throw new Error("CORS_ORIGINS is not set — refusing to start with no explicit CORS allowlist.");
+}
+const CORS_ALLOWLIST = corsOrigins
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
+  app.enableCors({ origin: CORS_ALLOWLIST, credentials: true });
   app.use(
     helmet({
       // Pure JSON API, no HTML ever served — the strictest policy, not the browser-page
