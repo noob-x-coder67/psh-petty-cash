@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Res, StreamableFile } from "@nestjs/common";
 import { CreateExportRequestSchema, type CreateExportRequest, type ExportStatusResponse } from "@psh/contracts";
 import type { Response } from "express";
+import { Audited } from "../../common/decorators/audited.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequiresPermission } from "../../common/decorators/requires-permission.decorator";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
@@ -16,6 +17,7 @@ export class ExportsController {
   // "All") is enforced inside ExportsService.assertOwnership instead.
   @Post()
   @RequiresPermission("report.export")
+  @Audited({ action: "REPORT_EXPORT_REQUESTED", entityType: "report_exports" })
   async create(
     @Body(new ZodValidationPipe(CreateExportRequestSchema)) body: CreateExportRequest,
     @CurrentUser() user: AuthenticatedUser,

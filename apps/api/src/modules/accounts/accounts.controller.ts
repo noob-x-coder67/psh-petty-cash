@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Post } from "@nestjs/common";
 import type { PettyCashAccount } from "@prisma/client";
+import { Audited } from "../../common/decorators/audited.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequiresPermission } from "../../common/decorators/requires-permission.decorator";
 import { RequiresUnitScope } from "../../common/decorators/requires-unit-scope.decorator";
@@ -13,6 +14,7 @@ export class AccountsController {
   @Post(":unitId")
   @RequiresPermission("admin.manage_users_units")
   @RequiresUnitScope("param.unitId")
+  @Audited({ action: "ACCOUNT_ENABLE", entityType: "petty_cash_accounts" })
   async enable(
     @Param("unitId") unitId: string,
     @CurrentUser() user: AuthenticatedUser,

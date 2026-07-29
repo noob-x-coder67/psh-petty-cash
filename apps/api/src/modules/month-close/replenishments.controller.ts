@@ -7,6 +7,7 @@ import {
   type CreateReplenishmentRequest,
   type Replenishment,
 } from "@psh/contracts";
+import { Audited } from "../../common/decorators/audited.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequiresPermission } from "../../common/decorators/requires-permission.decorator";
 import { RequiresUnitScope } from "../../common/decorators/requires-unit-scope.decorator";
@@ -23,6 +24,7 @@ export class ReplenishmentsController {
   @Post("replenishments")
   @RequiresPermission("allocation.record")
   @RequiresUnitScope("body.unitId")
+  @Audited({ action: "REPLENISHMENT_CREATE", entityType: "replenishments" })
   async create(
     @Body(new ZodValidationPipe(CreateReplenishmentRequestSchema)) body: CreateReplenishmentRequest,
     @CurrentUser() user: AuthenticatedUser,
@@ -33,6 +35,7 @@ export class ReplenishmentsController {
   @Post("replenishments/:id/confirm")
   @RequiresPermission("allocation.confirm_receipt")
   @RequiresUnitScope("derived")
+  @Audited({ action: "REPLENISHMENT_CONFIRM", entityType: "replenishments" })
   async confirm(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(ConfirmReplenishmentRequestSchema)) body: ConfirmReplenishmentRequest,

@@ -3,6 +3,7 @@ import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedExc
 import { Throttle } from "@nestjs/throttler";
 import { LoginRequestSchema, type LoginRequest } from "@psh/contracts";
 import type { CookieOptions, Request, Response } from "express";
+import { Audited } from "../../common/decorators/audited.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { CSRF_TOKEN_COOKIE, CsrfGuard } from "../../common/guards/csrf.guard";
 import { ACCESS_TOKEN_COOKIE } from "../../common/guards/jwt-auth.guard";
@@ -34,6 +35,7 @@ export class AuthController {
   // lockout threshold (auth.rules.ts LOCKOUT_THRESHOLD=5), which is the tighter,
   // account-specific control. These are two distinct mechanisms (Build Plan §6.1).
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Audited({ action: ["LOGIN_SUCCESS", "LOGIN_FAILURE"], entityType: "users" })
   async login(
     @Body(new ZodValidationPipe(LoginRequestSchema)) body: LoginRequest,
     @Req() req: Request,
@@ -53,6 +55,10 @@ export class AuthController {
   @UseGuards(CsrfGuard)
   @Post("refresh")
   @HttpCode(HttpStatus.OK)
+  // A normal, successful token rotation writes no audit row by design — only the
+  // reuse-detection anomaly path does (auth.service.ts's refresh()). This metadata
+  // documents that anomaly path, not "every refresh."
+  @Audited({ action: "SESSION_REUSE_DETECTED", entityType: "sessions" })
   async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ user: SessionUser }> {
     const refreshToken = (req.cookies as Record<string, string> | undefined)?.[REFRESH_TOKEN_COOKIE];
     if (!refreshToken) {
@@ -70,6 +76,7 @@ export class AuthController {
   @UseGuards(CsrfGuard)
   @Post("logout")
   @HttpCode(HttpStatus.OK)
+  @Audited({ action: "LOGOUT", entityType: "sessions" })
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response): Promise<{ success: true }> {
     const refreshToken = (req.cookies as Record<string, string> | undefined)?.[REFRESH_TOKEN_COOKIE];
     if (refreshToken) {

@@ -12,6 +12,7 @@ import {
   type UncheckVoucherRequest,
 } from "@psh/contracts";
 import type { ExpenseVoucher } from "@prisma/client";
+import { Audited } from "../../common/decorators/audited.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequiresPermission } from "../../common/decorators/requires-permission.decorator";
 import { RequiresUnitScope } from "../../common/decorators/requires-unit-scope.decorator";
@@ -28,6 +29,7 @@ export class ExpensesController {
   @Post()
   @RequiresPermission("expense.create")
   @RequiresUnitScope("body.unitId")
+  @Audited({ action: "EXPENSE_CREATE", entityType: "expense_vouchers" })
   async create(
     @Body(new ZodValidationPipe(CreateVoucherRequestSchema)) body: CreateVoucherRequest,
     @CurrentUser() user: AuthenticatedUser,
@@ -78,6 +80,7 @@ export class ExpensesController {
   @Patch(":id")
   @RequiresPermission("expense.edit_saved")
   @RequiresUnitScope("derived")
+  @Audited({ action: "EXPENSE_EDIT", entityType: "expense_vouchers" })
   async edit(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(EditVoucherRequestSchema)) body: EditVoucherRequest,
@@ -89,6 +92,7 @@ export class ExpensesController {
   @Post(":id/reverse")
   @RequiresPermission("expense.edit_saved")
   @RequiresUnitScope("derived")
+  @Audited({ action: "EXPENSE_REVERSE", entityType: "expense_vouchers" })
   async reverse(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(ReverseVoucherRequestSchema)) body: ReverseVoucherRequest,
@@ -100,6 +104,7 @@ export class ExpensesController {
   @Post(":id/check")
   @RequiresPermission("receipt.check")
   @RequiresUnitScope("derived")
+  @Audited({ action: "RECEIPT_CHECK", entityType: "expense_vouchers" })
   async check(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<ExpenseVoucher> {
     return this.expensesService.checkVoucher(id, user);
   }
@@ -107,6 +112,7 @@ export class ExpensesController {
   @Post(":id/uncheck")
   @RequiresPermission("receipt.check")
   @RequiresUnitScope("derived")
+  @Audited({ action: "RECEIPT_UNCHECK", entityType: "expense_vouchers" })
   async uncheck(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(UncheckVoucherRequestSchema)) body: UncheckVoucherRequest,
@@ -118,6 +124,9 @@ export class ExpensesController {
   @Post("bulk-check")
   @RequiresPermission("receipt.check")
   @RequiresUnitScope("derived")
+  // bulkCheckVouchers loops checkVoucher per id — N rows with this same action are a
+  // legitimate outcome of one call, not a mismatch.
+  @Audited({ action: "RECEIPT_CHECK", entityType: "expense_vouchers" })
   async bulkCheck(
     @Body(new ZodValidationPipe(BulkCheckRequestSchema)) body: BulkCheckRequest,
     @CurrentUser() user: AuthenticatedUser,

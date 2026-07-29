@@ -11,6 +11,7 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
+import { Audited } from "../../common/decorators/audited.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequiresPermission } from "../../common/decorators/requires-permission.decorator";
 import { RequiresUnitScope } from "../../common/decorators/requires-unit-scope.decorator";
@@ -25,6 +26,7 @@ export class AttachmentsController {
   @RequiresPermission("attachment.upload")
   @RequiresUnitScope("derived")
   @UseInterceptors(FileInterceptor("file", { limits: { fileSize: UPLOAD_MAX_BYTES } }))
+  @Audited({ action: "ATTACHMENT_UPLOAD", entityType: "attachments" })
   async upload(
     @Param("id") voucherId: string,
     @UploadedFile() file: Express.Multer.File | undefined,

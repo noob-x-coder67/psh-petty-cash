@@ -6,6 +6,7 @@ import {
   type CreateAllocationRequest,
 } from "@psh/contracts";
 import type { CashAllocation } from "@prisma/client";
+import { Audited } from "../../common/decorators/audited.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequiresPermission } from "../../common/decorators/requires-permission.decorator";
 import { RequiresUnitScope } from "../../common/decorators/requires-unit-scope.decorator";
@@ -20,6 +21,7 @@ export class AllocationsController {
   @Post()
   @RequiresPermission("allocation.record")
   @RequiresUnitScope("body.unitId")
+  @Audited({ action: "ALLOCATION_CREATE", entityType: "cash_allocations" })
   async create(
     @Body(new ZodValidationPipe(CreateAllocationRequestSchema)) body: CreateAllocationRequest,
     @CurrentUser() user: AuthenticatedUser,
@@ -30,6 +32,7 @@ export class AllocationsController {
   @Post(":id/confirm")
   @RequiresPermission("allocation.confirm_receipt")
   @RequiresUnitScope("derived")
+  @Audited({ action: "ALLOCATION_CONFIRM", entityType: "cash_allocations" })
   async confirm(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(ConfirmAllocationRequestSchema)) body: ConfirmAllocationRequest,
