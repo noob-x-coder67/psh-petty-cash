@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { type INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { Prisma } from "@prisma/client";
@@ -112,6 +113,59 @@ describe("GET /reports/:reportKey — auth, validation and unit scope", () => {
       .expect(200);
     expect(res.body.rows.length).toBeGreaterThanOrEqual(9);
     expect(res.body.rows.some((row: { unitCode: string }) => row.unitCode === "PSH-ISB")).toBe(false);
+  });
+});
+
+describe("RPT-14 audit trail — audit.view gate and keyset pagination (Phase 8)", () => {
+  it("a UNIT_USER (has report.export but not audit.view) gets 403 on RPT-14, but 200 on RPT-01", async () => {
+    const cookies = await loginAs("user.sohawa@psh.local");
+    await request(app.getHttpServer()).get("/reports/RPT-14").set("Cookie", cookies).expect(403);
+    await request(app.getHttpServer()).get("/reports/RPT-01").set("Cookie", cookies).expect(200);
+  });
+
+  it("a second cursor-paginated page returns no rows repeated from the first page", async () => {
+    // Deterministic volume, isolated from whatever else the shared test database is
+    // doing concurrently: 60 audit rows written directly (not through 60 real HTTP
+    // logins, which would trip ThrottlerGuard's per-IP rate limit) under one unique
+    // marker action, guaranteeing a real page boundary (limit 50) to cross regardless of
+    // test execution order or other files' concurrent activity.
+    const financeOfficer = await prisma.user.findUniqueOrThrow({ where: { email: "financeofficer@psh.local" } });
+    const marker = `RPT14-PAGINATION-PROBE-${randomUUID()}`;
+    await prisma.auditLog.createMany({
+      data: Array.from({ length: 60 }, () => ({
+        actorId: financeOfficer.id,
+        actorRole: "FINANCE_OFFICER",
+        action: marker,
+        entityType: "users",
+        entityId: financeOfficer.id,
+      })),
+    });
+
+    const cookies = await loginAs("financemanager@psh.local");
+    const filters = filtersQuery({ dateFrom: "2000-01-01", dateTo: "3000-01-01", action: marker });
+
+    const firstPage = await request(app.getHttpServer())
+      .get("/reports/RPT-14")
+      .query({ filters })
+      .set("Cookie", cookies)
+      .expect(200);
+
+    expect(firstPage.body.nextCursor).not.toBeNull();
+
+    const secondPage = await request(app.getHttpServer())
+      .get("/reports/RPT-14")
+      .query({
+        filters,
+        cursorOccurredAt: firstPage.body.nextCursor.occurredAt,
+        cursorId: firstPage.body.nextCursor.id,
+      })
+      .set("Cookie", cookies)
+      .expect(200);
+
+    expect(secondPage.body.rows.length).toBeGreaterThan(0);
+    const firstIds = new Set(firstPage.body.rows.map((row: { id: string }) => row.id));
+    const overlap = secondPage.body.rows.filter((row: { id: string }) => firstIds.has(row.id));
+    expect(overlap).toEqual([]);
   });
 });
 

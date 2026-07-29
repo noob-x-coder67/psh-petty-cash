@@ -39,5 +39,10 @@ export const ReportFilterSchema = z.object({
   checkedBy: z.string().uuid().optional(),
   isBackdated: z.boolean().optional(),
   attachmentStatus: z.enum(["ACTIVE", "DELETED"]).optional(),
+  // RPT-14-only — ignored by the other 15 reports, same "accepted but has no target
+  // column here" stance already documented on Rpt01ResponseSchema for its own subset.
+  actorSearch: z.string().optional(),
+  action: z.string().optional(),
+  entityType: z.string().optional(),
 });
 export type ReportFilter = z.infer<typeof ReportFilterSchema>;

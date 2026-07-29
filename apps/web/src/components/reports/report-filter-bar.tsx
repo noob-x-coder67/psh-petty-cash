@@ -10,7 +10,10 @@ export type ReportFilterField =
   | "vendor"
   | "amountRange"
   | "checked"
-  | "hasBill";
+  | "hasBill"
+  | "actorSearch"
+  | "action"
+  | "entityType";
 
 export interface ReportFilterBarProps {
   value: ReportFilter;
@@ -149,6 +152,45 @@ export function ReportFilterBar({ value, onChange, units, showUnitPicker, fields
             <option value="true">Checked only</option>
             <option value="false">Unchecked only</option>
           </select>
+        </label>
+      ) : null}
+
+      {fields.includes("actorSearch") ? (
+        <label className="flex flex-col gap-1 text-xs text-ink-muted">
+          Actor
+          <Input
+            aria-label="Actor name search"
+            placeholder="Actor name..."
+            value={value.actorSearch ?? ""}
+            onChange={(event) => patch({ actorSearch: event.target.value || undefined })}
+            className="w-44"
+          />
+        </label>
+      ) : null}
+
+      {fields.includes("action") ? (
+        <label className="flex flex-col gap-1 text-xs text-ink-muted">
+          Action
+          <Input
+            aria-label="Audit action"
+            placeholder="e.g. EXPENSE_CREATE"
+            value={value.action ?? ""}
+            onChange={(event) => patch({ action: event.target.value || undefined })}
+            className="w-44"
+          />
+        </label>
+      ) : null}
+
+      {fields.includes("entityType") ? (
+        <label className="flex flex-col gap-1 text-xs text-ink-muted">
+          Entity type
+          <Input
+            aria-label="Audit entity type"
+            placeholder="e.g. expense_vouchers"
+            value={value.entityType ?? ""}
+            onChange={(event) => patch({ entityType: event.target.value || undefined })}
+            className="w-44"
+          />
         </label>
       ) : null}
 

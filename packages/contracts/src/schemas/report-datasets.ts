@@ -260,6 +260,9 @@ export const Rpt14RowSchema = z.object({
 export const Rpt14ResponseSchema = ReportEnvelopeSchema.extend({
   reportKey: z.literal("RPT-14"),
   rows: z.array(Rpt14RowSchema),
+  // Keyset cursor (occurredAt, id) — audit_logs has no date-range-bounded default the
+  // way the other 15 reports do, so it's the one report response that can page.
+  nextCursor: z.object({ occurredAt: z.string(), id: z.string().uuid() }).nullable(),
 });
 export type Rpt14Response = z.infer<typeof Rpt14ResponseSchema>;
 

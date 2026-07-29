@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { type INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { Prisma } from "@prisma/client";
@@ -343,36 +344,107 @@ describe("RPT-13 User Activity", () => {
 });
 
 describe("RPT-14 Audit Trail", () => {
-  it("row count matches a direct count of audit_logs in range", async () => {
+  // Phase 8 gave RPT-14 keyset pagination (limit 50/page) — a single-page row count can
+  // no longer equal the full-range direct count. Walking every page and summing is the
+  // equivalent, still-meaningful reconciliation: every row in range is accounted for
+  // exactly once, just not all in one response.
+  //
+  // This must NOT walk the whole WIDE_RANGE history: audit_logs is append-only and this
+  // test database accumulates rows across every suite run (4700+ at last count), which
+  // would mean ~95 page-fetch requests from this one test alone — comfortably enough to
+  // blow through ThrottlerGuard's global 100-req/60s-per-IP ceiling (common.module.ts)
+  // by itself, taking the rest of this file down with it. Seeding a known, bounded row
+  // count under a unique marker action keeps this test's request volume small and
+  // constant regardless of how much unrelated history the shared test DB has piled up.
+  it("summed row count across every page matches a direct count of seeded probe rows", async () => {
     const cookies = await loginAs("financemanager@psh.local");
-    const directCount = await prisma.auditLog.count({
-      where: {
-        occurredAt: {
-          gte: new Date(WIDE_RANGE.dateFrom),
-          lt: new Date(new Date(`${WIDE_RANGE.dateTo}T00:00:00.000Z`).getTime() + 86_400_000),
-        },
-      },
+    const financeOfficer = await prisma.user.findUniqueOrThrow({ where: { email: "financeofficer@psh.local" } });
+    const marker = `RPT14-RECONCILE-PROBE-${randomUUID()}`;
+    const seedCount = 120; // 3 pages at the repository's fixed limit of 50 (50 + 50 + 20)
+    await prisma.auditLog.createMany({
+      data: Array.from({ length: seedCount }, () => ({
+        actorId: financeOfficer.id,
+        actorRole: "FINANCE_OFFICER",
+        action: marker,
+        entityType: "users",
+        entityId: financeOfficer.id,
+      })),
     });
-    const res = await request(app.getHttpServer())
-      .get("/reports/RPT-14")
-      .query({ filters: filtersQuery(WIDE_RANGE) })
-      .set("Cookie", cookies)
-      .expect(200);
-    expect(res.body.rows.length).toBe(directCount);
+
+    let total = 0;
+    let cursor: { occurredAt: string; id: string } | null = null;
+    for (let page = 0; page < 10 && (page === 0 || cursor !== null); page += 1) {
+      const query: Record<string, string> = { filters: filtersQuery({ ...WIDE_RANGE, action: marker }) };
+      if (cursor) {
+        query.cursorOccurredAt = cursor.occurredAt;
+        query.cursorId = cursor.id;
+      }
+      const res: request.Response = await request(app.getHttpServer())
+        .get("/reports/RPT-14")
+        .query(query)
+        .set("Cookie", cookies)
+        .expect(200);
+      total += res.body.rows.length;
+      cursor = res.body.nextCursor;
+    }
+    expect(total).toBe(seedCount);
   });
 
-  it("a Center User only sees audit rows tied to their own unit", async () => {
-    const cookies = await loginAs("user.sohawa@psh.local");
-    const res = await request(app.getHttpServer())
-      .get("/reports/RPT-14")
-      .query({ filters: filtersQuery(WIDE_RANGE) })
-      .set("Cookie", cookies)
-      .expect(200);
+  // No seeded demo user is both unit-scoped AND holds audit.view (UNIT_USER, the only
+  // unit-scoped seeded role, deliberately does not — see reports.controller.ts's RPT-14
+  // gate) — a fixture Unit In-Charge is created directly so the unit-scoping guarantee
+  // is still exercised through a real login, not just asserted against seed data.
+  it("a Unit In-Charge only sees audit rows tied to their own unit", async () => {
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
-    expect(res.body.rows.length).toBeGreaterThan(0);
-    expect(
-      (res.body.rows as Array<{ unitCode: string | null }>).every((row) => row.unitCode === unit.code),
-    ).toBe(true);
+    const financeOfficer = await prisma.user.findUniqueOrThrow({ where: { email: "financeofficer@psh.local" } });
+    const inchargeRole = await prisma.role.findUniqueOrThrow({ where: { key: "UNIT_INCHARGE" } });
+    const fixtureUser = await prisma.user.upsert({
+      where: { email: "rpt14-fixture-incharge@psh.local" },
+      update: {},
+      create: {
+        email: "rpt14-fixture-incharge@psh.local",
+        username: "rpt14-fixture-incharge",
+        fullName: "RPT-14 Fixture Unit In-Charge",
+        passwordHash: financeOfficer.passwordHash, // same DEMO_PASSWORD hash, so loginAs's fixed password works
+      },
+    });
+    await prisma.userRole.upsert({
+      where: { userId_roleId: { userId: fixtureUser.id, roleId: inchargeRole.id } },
+      update: {},
+      create: { userId: fixtureUser.id, roleId: inchargeRole.id },
+    });
+    await prisma.userUnitAccess.upsert({
+      where: { userId_unitId: { userId: fixtureUser.id, unitId: unit.id } },
+      update: {},
+      create: { userId: fixtureUser.id, unitId: unit.id, grantedBy: financeOfficer.id },
+    });
+
+    // try/finally, not cleanup-after-assertions: a thrown expectation (or an unrelated
+    // 429 from a throttled request) would otherwise skip cleanup entirely, leaking this
+    // fixture past this test and breaking organization-schema.integration.spec.ts's exact
+    // user-count assertion on every later run until someone deletes it by hand — this is
+    // exactly what happened the first time this test existed.
+    try {
+      const cookies = await loginAs("rpt14-fixture-incharge@psh.local");
+      const res = await request(app.getHttpServer())
+        .get("/reports/RPT-14")
+        .query({ filters: filtersQuery(WIDE_RANGE) })
+        .set("Cookie", cookies)
+        .expect(200);
+      expect(res.body.rows.length).toBeGreaterThan(0);
+      expect(
+        (res.body.rows as Array<{ unitCode: string | null }>).every((row) => row.unitCode === unit.code),
+      ).toBe(true);
+    } finally {
+      // organization-schema.integration.spec.ts asserts an exact total user count against
+      // Appendix E's seeded list — this fixture must not outlive this test. Audit rows
+      // referencing this actorId are untouched (audit_logs has no FK to users by design),
+      // matching BR-020's "audit rows outlive the actor" guarantee.
+      await prisma.session.deleteMany({ where: { userId: fixtureUser.id } });
+      await prisma.userUnitAccess.deleteMany({ where: { userId: fixtureUser.id } });
+      await prisma.userRole.deleteMany({ where: { userId: fixtureUser.id } });
+      await prisma.user.delete({ where: { id: fixtureUser.id } });
+    }
   });
 });
 

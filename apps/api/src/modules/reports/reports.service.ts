@@ -59,7 +59,14 @@ export class ReportsService {
     private readonly monthCloseRepository: MonthCloseRepository,
   ) {}
 
-  async getReport(reportKey: ReportKey, filter: ReportFilter, user: AuthenticatedUser): Promise<ReportDatasetResponse> {
+  async getReport(
+    reportKey: ReportKey,
+    filter: ReportFilter,
+    user: AuthenticatedUser,
+    // RPT-14-only — every other report key ignores this, same "accepted but has no
+    // target here" stance as the RPT-14-only filter fields on ReportFilter itself.
+    auditCursor?: { occurredAt: Date; id: string },
+  ): Promise<ReportDatasetResponse> {
     const unitIds = resolveScopedUnitIds(filter.unitIds, user);
     const period = resolveReportPeriod(filter);
     const envelope = {
@@ -97,7 +104,7 @@ export class ReportsService {
       case "RPT-13":
         return { reportKey, ...envelope, ...(await this.buildUserActivity(unitIds, period)) };
       case "RPT-14":
-        return { reportKey, ...envelope, ...(await this.buildAuditTrail(unitIds, period)) };
+        return { reportKey, ...envelope, ...(await this.buildAuditTrail(unitIds, period, filter, auditCursor)) };
       case "RPT-15":
         return { reportKey, ...envelope, ...(await this.buildCrossUnitComparison(unitIds, period)) };
       case "RPT-16":
@@ -502,12 +509,31 @@ export class ReportsService {
     return { rows };
   }
 
-  private async buildAuditTrail(unitIds: string[] | null, period: ReportPeriod): Promise<{ rows: Rpt14Row[] }> {
-    const logs = await this.reportsRepository.listAuditLogs(unitIds, period);
-    const actorIds = Array.from(new Set(logs.map((log) => log.actorId).filter((id): id is string => id !== null)));
+  private async buildAuditTrail(
+    unitIds: string[] | null,
+    period: ReportPeriod,
+    filter: ReportFilter,
+    cursor?: { occurredAt: Date; id: string },
+  ): Promise<{ rows: Rpt14Row[]; nextCursor: { occurredAt: string; id: string } | null }> {
+    // actorSearch matches by resolved user name, not a stored column — an empty match
+    // set must still filter to zero rows (actorIds: []), not fall through to "no filter".
+    const actorIds = filter.actorSearch
+      ? await this.reportsRepository.findUserIdsByNameSearch(filter.actorSearch)
+      : undefined;
+
+    const limit = 50;
+    const logs = await this.reportsRepository.listAuditLogs(
+      unitIds,
+      period,
+      { action: filter.action, entityType: filter.entityType, actorIds },
+      cursor,
+      limit,
+    );
+
+    const actorIdsInLogs = Array.from(new Set(logs.map((log) => log.actorId).filter((id): id is string => id !== null)));
     const unitIdsInLogs = Array.from(new Set(logs.map((log) => log.unitId).filter((id): id is string => id !== null)));
     const [users, unitCodes] = await Promise.all([
-      this.reportsRepository.findUsersByIds(actorIds),
+      this.reportsRepository.findUsersByIds(actorIdsInLogs),
       this.reportsRepository.findUnitCodesByIds(unitIdsInLogs),
     ]);
     const nameById = new Map(users.map((user) => [user.id, user.fullName]));
@@ -524,7 +550,10 @@ export class ReportsService {
       reason: log.reason,
     }));
 
-    return { rows };
+    const last = logs.at(-1);
+    const nextCursor = logs.length === limit && last ? { occurredAt: last.occurredAt.toISOString(), id: last.id } : null;
+
+    return { rows, nextCursor };
   }
 
   // Reuses RPT-01's own rollup rather than re-querying — the "compliance" ranking

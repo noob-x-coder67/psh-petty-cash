@@ -11,6 +11,7 @@ import { Rpt01View } from "./rpt01-view";
 import { Rpt03View } from "./rpt03-view";
 import { Rpt04View } from "./rpt04-view";
 import { Rpt06View } from "./rpt06-view";
+import { Rpt14View } from "./rpt14-view";
 import { useReportQuery } from "./use-report-query";
 
 const REPORT_TITLES: Record<string, string> = {
@@ -49,7 +50,7 @@ const REPORT_FIELDS: Record<string, ReportFilterField[]> = {
   "RPT-11": ["dateRange", "unit"],
   "RPT-12": ["dateRange", "unit"],
   "RPT-13": ["dateRange", "unit"],
-  "RPT-14": ["dateRange", "unit"],
+  "RPT-14": ["dateRange", "unit", "actorSearch", "action", "entityType"],
   "RPT-15": ["dateRange", "unit"],
   "RPT-16": ["dateRange", "unit", "category", "vendor", "amountRange", "checked", "hasBill"],
 };
@@ -57,7 +58,10 @@ const REPORT_FIELDS: Record<string, ReportFilterField[]> = {
 // The 4 flagship reports (Phase 6b/6c) get bespoke chart/table views; every other
 // implemented report (Phase 6e) renders through GenericReportView, matching Build
 // Plan §3.1's "filter-rich, exportable" bar without a bespoke component per report.
-const BESPOKE_REPORT_KEYS: ReadonlySet<string> = new Set(["RPT-01", "RPT-03", "RPT-04", "RPT-06"]);
+// RPT-14 (Phase 8) is also bespoke, but for a different reason than the flagship 4 —
+// it's cursor-paginated (own useInfiniteQuery), not a richer single-shot chart, so it
+// bypasses useReportQuery entirely rather than just rendering `data` differently.
+const BESPOKE_REPORT_KEYS: ReadonlySet<string> = new Set(["RPT-01", "RPT-03", "RPT-04", "RPT-06", "RPT-14"]);
 
 export function ReportView({
   reportKey,
@@ -69,7 +73,8 @@ export function ReportView({
   showUnitPicker: boolean;
 }) {
   const [filter, setFilter] = useState<ReportFilter>({});
-  const { data, isLoading, isError, error } = useReportQuery(reportKey, filter);
+  const isRpt14 = reportKey === "RPT-14";
+  const { data, isLoading, isError, error } = useReportQuery(reportKey, filter, !isRpt14);
   const title = REPORT_TITLES[reportKey] ?? reportKey;
   const fields = REPORT_FIELDS[reportKey] ?? [];
 
@@ -88,25 +93,31 @@ export function ReportView({
 
       <PresetControls reportKey={reportKey} filter={filter} onApply={setFilter} />
 
-      {isLoading ? <p className="text-sm text-ink-muted">Loading report...</p> : null}
-      {isError ? (
-        <p className="text-sm text-coral-500">
-          Could not load this report{error instanceof Error ? `: ${error.message}` : "."}
-        </p>
-      ) : null}
-
-      {data ? (
+      {isRpt14 ? (
+        <Rpt14View filter={filter} />
+      ) : (
         <>
-          <ReportHeader title={title} response={data} />
-          {data.reportKey === "RPT-01" ? <Rpt01View response={data} /> : null}
-          {data.reportKey === "RPT-03" ? <Rpt03View response={data} /> : null}
-          {data.reportKey === "RPT-04" ? <Rpt04View response={data} /> : null}
-          {data.reportKey === "RPT-06" ? <Rpt06View response={data} /> : null}
-          {!BESPOKE_REPORT_KEYS.has(data.reportKey) ? (
-            <GenericReportView rows={data.rows as Array<Record<string, unknown>>} />
+          {isLoading ? <p className="text-sm text-ink-muted">Loading report...</p> : null}
+          {isError ? (
+            <p className="text-sm text-coral-500">
+              Could not load this report{error instanceof Error ? `: ${error.message}` : "."}
+            </p>
+          ) : null}
+
+          {data ? (
+            <>
+              <ReportHeader title={title} response={data} />
+              {data.reportKey === "RPT-01" ? <Rpt01View response={data} /> : null}
+              {data.reportKey === "RPT-03" ? <Rpt03View response={data} /> : null}
+              {data.reportKey === "RPT-04" ? <Rpt04View response={data} /> : null}
+              {data.reportKey === "RPT-06" ? <Rpt06View response={data} /> : null}
+              {!BESPOKE_REPORT_KEYS.has(data.reportKey) ? (
+                <GenericReportView rows={data.rows as Array<Record<string, unknown>>} />
+              ) : null}
+            </>
           ) : null}
         </>
-      ) : null}
+      )}
     </div>
   );
 }

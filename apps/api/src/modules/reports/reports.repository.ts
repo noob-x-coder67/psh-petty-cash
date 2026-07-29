@@ -319,14 +319,49 @@ export class ReportsRepository {
   }
 
   /** RPT-14: audit_logs has no FK to users (rows must stay legible even if the actor is
-   * later deleted), so actor names are resolved separately via findUsersByIds. */
-  async listAuditLogs(unitIds: string[] | null, period: ReportPeriod) {
+   * later deleted), so actorSearch resolves to a set of matching user ids first (this
+   * method), then filters audit_logs by actorId — same two-step shape findUsersByIds/
+   * findUnitCodesByIds already use for display-side name resolution. */
+  async findUserIdsByNameSearch(search: string): Promise<string[]> {
+    const users = await this.prisma.user.findMany({
+      where: { fullName: { contains: search, mode: "insensitive" } },
+      select: { id: true },
+    });
+    return users.map((user) => user.id);
+  }
+
+  /** Keyset pagination (occurredAt, id) — not OFFSET, mirroring
+   * ExpensesRepository.listVouchersForAccount's exact cursor shape. `actorIds` is the
+   * pre-resolved result of an actorSearch filter (undefined = not filtering by actor;
+   * an array, possibly empty, = filtering to exactly those actors). */
+  async listAuditLogs(
+    unitIds: string[] | null,
+    period: ReportPeriod,
+    filter: { action?: string; entityType?: string; actorIds?: string[] } = {},
+    cursor?: { occurredAt: Date; id: string },
+    limit = 50,
+  ) {
+    const andConditions: Prisma.AuditLogWhereInput[] = [];
+    if (cursor) {
+      andConditions.push({
+        OR: [
+          { occurredAt: { lt: cursor.occurredAt } },
+          { occurredAt: cursor.occurredAt, id: { lt: cursor.id } },
+        ],
+      });
+    }
+
     return this.prisma.auditLog.findMany({
       where: {
         occurredAt: { gte: period.start, lt: period.end },
         unitId: unitIds ? { in: unitIds } : undefined,
+        ...(filter.action ? { action: filter.action } : {}),
+        ...(filter.entityType ? { entityType: filter.entityType } : {}),
+        ...(filter.actorIds ? { actorId: { in: filter.actorIds } } : {}),
+        ...(andConditions.length > 0 ? { AND: andConditions } : {}),
       },
-      orderBy: { occurredAt: "desc" },
+      orderBy: [{ occurredAt: "desc" }, { id: "desc" }],
+      take: limit,
     });
   }
 
