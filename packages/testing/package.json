@@ -10,6 +10,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests"
   },
+  "dependencies": {
+    "@nestjs/common": "^11.1.28",
+    "reflect-metadata": "^0.2.2"
+  },
   "devDependencies": {
     "@psh/config": "workspace:*",
     "typescript": "^6.0.3",

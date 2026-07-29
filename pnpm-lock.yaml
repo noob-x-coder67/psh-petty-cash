@@ -119,6 +119,9 @@ importers:
       '@psh/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@psh/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@types/cookie-parser':
         specifier: ^1.4.10
         version: 1.4.10(@types/express@5.0.6)
@@ -296,6 +299,13 @@ importers:
         version: 4.1.10(@types/node@26.1.1)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.49.0)(tsx@4.23.1))
 
   packages/testing:
+    dependencies:
+      '@nestjs/common':
+        specifier: ^11.1.28
+        version: 11.1.28(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
     devDependencies:
       '@psh/config':
         specifier: workspace:*
