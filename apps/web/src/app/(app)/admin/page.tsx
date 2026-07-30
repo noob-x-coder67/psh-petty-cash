@@ -3,16 +3,16 @@ import { Building2, KeyRound, Settings2, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import Link from "next/link";
 
-// SRS §12.10 Administration — Users (this phase) is real; Units/Permissions/
-// Configuration are still deliberate, polished "not available yet" previews (no
-// href/onClick) until their own phases land, per the redesign brief's "no fake working
-// controls" rule.
+// SRS §12.10 Administration — Users and Units (through this phase) are real;
+// Permissions/Configuration are still deliberate, polished "not available yet" previews
+// (no href/onClick) until their own phases land, per the redesign brief's "no fake
+// working controls" rule.
 const AVAILABLE_MODULES: Array<{ icon: LucideIcon; label: string; description: string; href: string }> = [
   { icon: Users, label: "Users", description: "Accounts, roles and access assignment", href: "/admin/users" },
+  { icon: Building2, label: "Units", description: "Petty-cash unit registry and metadata", href: "/admin/units" },
 ];
 
 const PLANNED_MODULES: Array<{ icon: LucideIcon; label: string; description: string }> = [
-  { icon: Building2, label: "Units", description: "Petty-cash unit registry and metadata" },
   { icon: KeyRound, label: "Permissions", description: "Role-to-permission mapping" },
   { icon: Settings2, label: "Configuration", description: "System-wide settings" },
 ];
