@@ -39,11 +39,11 @@ export default function LoginPage() {
   async function onSubmit(values: LoginRequest): Promise<void> {
     setServerError(null);
     try {
-      await apiFetch<LoginResponse>("/auth/login", {
+      const result = await apiFetch<LoginResponse>("/auth/login", {
         method: "POST",
         body: JSON.stringify(values),
       });
-      router.push("/");
+      router.push(result.user.mustChangePassword ? "/change-password" : "/");
       router.refresh();
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "Login failed");

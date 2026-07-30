@@ -22,6 +22,7 @@ import { OrganizationController } from "../../modules/organization/organization.
 import { ExportsController } from "../../modules/reports/exports.controller";
 import { PresetsController } from "../../modules/reports/presets.controller";
 import { ReportsController } from "../../modules/reports/reports.controller";
+import { UsersController } from "../../modules/users/users.controller";
 import { REQUIRES_PERMISSION_KEY } from "../decorators/requires-permission.decorator";
 import { PermissionGuard } from "./permission.guard";
 import type { AuthenticatedUser } from "../types/authenticated-user";
@@ -43,6 +44,7 @@ const ALL_CONTROLLERS: Constructor[] = [
   ReportsController,
   ExportsController,
   PresetsController,
+  UsersController,
 ];
 
 // Inverts ROLE_PERMISSIONS (permission -> roles[], as prisma/seed-data.ts defines it) into
@@ -64,6 +66,7 @@ function fixtureUser(roleKey: RoleKey): AuthenticatedUser {
     id: `fixture-${roleKey}`,
     email: `${roleKey.toLowerCase()}@fixture.local`,
     fullName: roleKey,
+    mustChangePassword: false,
     roleKeys: [roleKey],
     permissionKeys: Array.from(PERMISSIONS_BY_ROLE.get(roleKey) ?? []),
     unitScope: { all: true, unitIds: [] },

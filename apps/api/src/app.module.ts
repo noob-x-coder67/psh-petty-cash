@@ -10,6 +10,7 @@ import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { MonthCloseModule } from "./modules/month-close/month-close.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { UsersModule } from "./modules/users/users.module";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { ReportsModule } from "./modules/reports/reports.module";
     DashboardModule,
     ReportsModule,
     MonthCloseModule,
+    UsersModule,
   ],
 })
 export class AppModule {}

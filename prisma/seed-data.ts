@@ -49,6 +49,7 @@ export const PERMISSIONS: Array<{ key: string; description: string }> = [
   { key: "compliance.override_three_month_hold", description: "Override three-month hold" },
   { key: "category.manage", description: "Manage categories" },
   { key: "admin.manage_users_units", description: "Manage users/units" },
+  { key: "admin.manage_unit_access", description: "Assign roles and unit access to existing users" },
   { key: "audit.view", description: "View audit" },
   { key: "report.export", description: "Export reports" },
 ];
@@ -75,7 +76,14 @@ export const ROLE_PERMISSIONS: Record<string, RoleKey[]> = {
   "month.close": ["FINANCE_MANAGER", "SUPER_ADMIN"],
   "compliance.override_three_month_hold": ["FINANCE_MANAGER", "SUPER_ADMIN"],
   "category.manage": ["FINANCE_MANAGER", "SUPER_ADMIN"],
-  "admin.manage_users_units": ["FINANCE_MANAGER", "SUPER_ADMIN"],
+  // Appendix A: "Manage users/units" is Finance Manager: Limited, Super Admin: Yes — split
+  // into two keys rather than one shared grant. admin.manage_users_units (user account
+  // lifecycle: create/deactivate/reset; unit create/edit) matches FR-AUTH-006 ("Super Admin
+  // shall activate, deactivate and reset users") and stays Super-Admin-only.
+  // admin.manage_unit_access (assigning roles/unit-access to EXISTING users) is what
+  // "Limited" means in practice, and both roles hold it.
+  "admin.manage_users_units": ["SUPER_ADMIN"],
+  "admin.manage_unit_access": ["FINANCE_MANAGER", "SUPER_ADMIN"],
   "audit.view": ["UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN", "AUDITOR"],
   "report.export": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN", "AUDITOR"],
 };

@@ -55,4 +55,14 @@ export class AuthRepository {
       data: { failedLoginCount: 0, lockedUntil: null, lastLoginAt: new Date() },
     });
   }
+
+  // Self-service change (AuthService.changePassword) always clears the flag — this is
+  // the user voluntarily/forcibly completing the change, distinct from
+  // UsersRepository.resetPassword (admin-initiated), which always sets it.
+  async updatePasswordAndClearMustChange(userId: string, passwordHash: string, client: Client = this.prisma): Promise<void> {
+    await client.user.update({
+      where: { id: userId },
+      data: { passwordHash, mustChangePassword: false },
+    });
+  }
 }

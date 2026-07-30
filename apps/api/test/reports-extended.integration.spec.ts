@@ -124,7 +124,13 @@ describe("RPT-05 Vendor/Payee Analysis", () => {
 });
 
 describe("RPT-07 Negative Balance", () => {
-  it("only reports streaks for accounts whose cached balance is currently negative or that recovered", async () => {
+  it("the open (endDate: null) streak unit codes exactly match the accounts currently negative", async () => {
+    // A live comparison against ground truth, not a magic expected count — how many
+    // accounts happen to be negative in this shared, never-reset test database drifts
+    // over time as other tests run (confirmed: PSH-SOH and PSH-SUK are both genuinely
+    // negative right now, from unrelated earlier test activity, not a bug here). The
+    // property this test actually needs to prove is "the report agrees with reality,"
+    // which holds regardless of how many accounts that reality currently includes.
     const cookies = await loginAs("financemanager@psh.local");
     const res = await request(app.getHttpServer())
       .get("/reports/RPT-07")
@@ -132,14 +138,18 @@ describe("RPT-07 Negative Balance", () => {
       .set("Cookie", cookies)
       .expect(200);
 
-    const negativeAccounts = await prisma.pettyCashAccount.count({ where: { cachedBalance: { lt: 0 } } });
-    // Every currently-negative account must have at least one open (endDate: null) streak.
+    const negativeAccounts = await prisma.pettyCashAccount.findMany({
+      where: { cachedBalance: { lt: 0 } },
+      select: { unit: { select: { code: true } } },
+    });
+    const negativeUnitCodes = new Set(negativeAccounts.map((account) => account.unit.code));
+
     const openStreakUnits = new Set(
       (res.body.rows as Array<{ unitCode: string; endDate: string | null }>)
         .filter((row) => row.endDate === null)
         .map((row) => row.unitCode),
     );
-    expect(openStreakUnits.size).toBe(negativeAccounts);
+    expect(openStreakUnits).toEqual(negativeUnitCodes);
   });
 });
 

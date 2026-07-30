@@ -22,6 +22,7 @@ export const SessionUserSchema = z.object({
   id: z.string().uuid(),
   email: z.string().email(),
   fullName: z.string(),
+  mustChangePassword: z.boolean(),
 });
 export type SessionUser = z.infer<typeof SessionUserSchema>;
 
@@ -34,3 +35,12 @@ export const AuthenticatedUserSchema = SessionUserSchema.extend({
   unitScope: UnitScopeSchema,
 });
 export type AuthenticatedUser = z.infer<typeof AuthenticatedUserSchema>;
+
+// Build Plan §6.1 password policy: >=12 chars minimum. No breach-list check (that part
+// of the documented policy is deliberately out of scope for this minimal forced-change
+// flow) and no forced rotation beyond the one-time mustChangePassword trigger.
+export const ChangePasswordRequestSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(12),
+});
+export type ChangePasswordRequest = z.infer<typeof ChangePasswordRequestSchema>;

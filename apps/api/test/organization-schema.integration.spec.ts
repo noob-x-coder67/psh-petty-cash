@@ -117,9 +117,14 @@ describe("seed shape (Appendix E / Appendix A)", () => {
     expect(count).toBe(TOTAL_ROLE_PERMISSIONS);
   });
 
-  it("seeds exactly the Appendix E demo users", async () => {
+  it("seeds at least the Appendix E demo users", async () => {
+    // Not an exact count: admin-users.integration.spec.ts (and real Administration usage
+    // going forward) creates genuine, permanent user rows — POST /admin/users has no
+    // corresponding delete endpoint by design (deactivation, not deletion, is the
+    // intended lifecycle). An exact count was only ever valid while nothing besides the
+    // seed could create a user; that stopped being true once user creation shipped.
     const count = await prisma.user.count();
-    expect(count).toBe(DEMO_USERS.length);
+    expect(count).toBeGreaterThanOrEqual(DEMO_USERS.length);
   });
 
   it.each(DEMO_USERS.filter((u) => u.unitCodes.length > 0))(

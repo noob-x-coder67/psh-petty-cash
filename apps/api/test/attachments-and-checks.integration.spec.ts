@@ -188,6 +188,7 @@ describe("byte deletion mechanism (BR-014, BR-015, FR-DOC-013)", () => {
       id: financeManagerUser.id,
       email: financeManagerUser.email,
       fullName: financeManagerUser.fullName,
+      mustChangePassword: financeManagerUser.mustChangePassword,
       roleKeys: ["FINANCE_MANAGER"],
       permissionKeys: [],
       unitScope: { all: true, unitIds: [] },

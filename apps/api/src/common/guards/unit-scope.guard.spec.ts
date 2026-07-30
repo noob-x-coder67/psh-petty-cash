@@ -26,6 +26,7 @@ const scopedUser: AuthenticatedUser = {
   id: "u1",
   email: "a@psh.local",
   fullName: "A",
+  mustChangePassword: false,
   roleKeys: ["UNIT_USER"],
   permissionKeys: [],
   unitScope: { all: false, unitIds: ["unit-1"] },

@@ -11,6 +11,10 @@ export interface UnitScopeFilter {
 export class OrganizationRepository {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findById(id: string): Promise<OrganizationalUnit | null> {
+    return this.prisma.organizationalUnit.findUnique({ where: { id } });
+  }
+
   /** Applies the caller's unit scope as a repository-level filter — Build Plan §3.3:
    * "every list query additionally receives a scopeFilter... applied in the repository
    * so even a controller that forgets a decorator cannot leak another unit's rows." */

@@ -12,7 +12,11 @@ export class AccountsController {
   constructor(private readonly accountsService: AccountsService) {}
 
   @Post(":unitId")
-  @RequiresPermission("admin.manage_users_units")
+  // Enabling petty cash for an already-existing unit is an operational access decision
+  // (who gets petty cash), not user lifecycle or unit definition — stays under the
+  // Finance-Manager-accessible key even after the admin.manage_users_units/
+  // admin.manage_unit_access split (see prisma/seed-data.ts).
+  @RequiresPermission("admin.manage_unit_access")
   @RequiresUnitScope("param.unitId")
   @Audited({ action: "ACCOUNT_ENABLE", entityType: "petty_cash_accounts" })
   async enable(

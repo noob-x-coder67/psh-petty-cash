@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import argon2 from "argon2";
 
 // Build Plan §6.1 minimum: m=19456,t=2,p=1.
@@ -10,6 +11,13 @@ const ARGON2_OPTIONS = {
 
 export async function hashPassword(plain: string): Promise<string> {
   return argon2.hash(plain, ARGON2_OPTIONS);
+}
+
+// Admin-initiated create/reset flows: a random, sufficiently-long (22 chars, base64url
+// alphabet) one-time credential, shown to the admin exactly once, always paired with
+// mustChangePassword=true — never meant to be typed by hand or reused.
+export function generateTemporaryPassword(): string {
+  return randomBytes(16).toString("base64url");
 }
 
 export async function verifyPassword(hash: string, plain: string): Promise<boolean> {

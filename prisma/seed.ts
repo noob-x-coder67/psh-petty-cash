@@ -50,14 +50,29 @@ async function main(): Promise<void> {
     });
   }
 
+  const expectedGrants = new Set<string>();
   for (const [permissionKey, roleKeys] of Object.entries(ROLE_PERMISSIONS)) {
     const permission = await prisma.permission.findUniqueOrThrow({ where: { key: permissionKey } });
     for (const roleKey of roleKeys) {
       const role = await prisma.role.findUniqueOrThrow({ where: { key: roleKey } });
+      expectedGrants.add(`${role.id}:${permission.id}`);
       await prisma.rolePermission.upsert({
         where: { roleId_permissionId: { roleId: role.id, permissionId: permission.id } },
         update: {},
         create: { roleId: role.id, permissionId: permission.id },
+      });
+    }
+  }
+
+  // The loop above only ever grants — a role removed from ROLE_PERMISSIONS for a given
+  // permission (e.g. narrowing admin.manage_users_units to SUPER_ADMIN only) would
+  // otherwise leave its old grant sitting in the database forever across re-seeds. Prune
+  // anything not in the current mapping so the seed is idempotent both ways.
+  const existingGrants = await prisma.rolePermission.findMany({ select: { roleId: true, permissionId: true } });
+  for (const grant of existingGrants) {
+    if (!expectedGrants.has(`${grant.roleId}:${grant.permissionId}`)) {
+      await prisma.rolePermission.delete({
+        where: { roleId_permissionId: { roleId: grant.roleId, permissionId: grant.permissionId } },
       });
     }
   }

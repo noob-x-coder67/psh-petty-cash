@@ -5,7 +5,7 @@ import type { Prisma } from "@prisma/client";
 import { AuditLogRepository } from "../../common/audit/audit-log.repository";
 import { AuthContextRepository } from "../../common/auth/auth-context.repository";
 import { PrismaService } from "../../common/prisma/prisma.service";
-import { verifyPassword } from "../../common/security/password";
+import { hashPassword, verifyPassword } from "../../common/security/password";
 import { AuthRepository } from "./auth.repository";
 import { evaluateLogin, evaluateRefresh } from "./auth.rules";
 
@@ -28,7 +28,7 @@ function generateToken(): string {
 export interface SessionTokens {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; email: string; fullName: string };
+  user: { id: string; email: string; fullName: string; mustChangePassword: boolean };
 }
 
 interface RequestContext {
@@ -232,7 +232,39 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      user: { id: result.context.id, email: result.context.email, fullName: result.context.fullName },
+      user: {
+        id: result.context.id,
+        email: result.context.email,
+        fullName: result.context.fullName,
+        mustChangePassword: result.context.mustChangePassword,
+      },
     };
+  }
+
+  async changePassword(
+    params: { userId: string; currentPassword: string; newPassword: string } & RequestContext,
+  ): Promise<void> {
+    const result = await this.authContextRepository.loadById(params.userId);
+    if (!result.found) {
+      throw new UnauthorizedException("User no longer exists");
+    }
+    const matches = await verifyPassword(result.passwordHash, params.currentPassword);
+    if (!matches) {
+      throw new UnauthorizedException("Current password is incorrect");
+    }
+    const newHash = await hashPassword(params.newPassword);
+    await this.prisma.$transaction(async (tx) => {
+      await this.authRepository.updatePasswordAndClearMustChange(params.userId, newHash, tx);
+      await this.auditLogRepository.record(tx, {
+        actorId: params.userId,
+        actorRole: result.context.roleKeys[0] ?? null,
+        action: "PASSWORD_CHANGE",
+        entityType: "users",
+        entityId: params.userId,
+        unitId: null,
+        ip: params.ipAddress,
+        userAgent: params.userAgent,
+      });
+    });
   }
 }

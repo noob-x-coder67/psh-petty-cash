@@ -25,6 +25,7 @@ const contextUser: AuthenticatedUser = {
   id: "u1",
   email: "a@psh.local",
   fullName: "A",
+  mustChangePassword: false,
   roleKeys: [],
   permissionKeys: [],
   unitScope: { all: false, unitIds: [] },

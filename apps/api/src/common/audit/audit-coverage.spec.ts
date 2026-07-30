@@ -15,6 +15,7 @@ import { OrganizationController } from "../../modules/organization/organization.
 import { ExportsController } from "../../modules/reports/exports.controller";
 import { PresetsController } from "../../modules/reports/presets.controller";
 import { ReportsController } from "../../modules/reports/reports.controller";
+import { UsersController } from "../../modules/users/users.controller";
 import { AUDITED_KEY } from "../decorators/audited.decorator";
 
 // `never[]` (not `unknown[]`) so this is assignable *from* any real controller
@@ -40,6 +41,7 @@ const ALL_CONTROLLERS: Constructor[] = [
   ReportsController,
   ExportsController,
   PresetsController,
+  UsersController,
 ];
 
 const MUTATING_METHODS = new Set<RequestMethod>([

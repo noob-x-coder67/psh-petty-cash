@@ -70,6 +70,7 @@ export class AuthContextRepository {
         id: user.id,
         email: user.email,
         fullName: user.fullName,
+        mustChangePassword: user.mustChangePassword,
         roleKeys,
         permissionKeys,
         unitScope: {

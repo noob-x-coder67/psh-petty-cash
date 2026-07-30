@@ -8,6 +8,7 @@ function user(overrides: Partial<AuthenticatedUser["unitScope"]>): Authenticated
     id: "u1",
     email: "u@psh.local",
     fullName: "Test User",
+    mustChangePassword: false,
     roleKeys: [],
     permissionKeys: [],
     unitScope: { all: false, unitIds: [], ...overrides },

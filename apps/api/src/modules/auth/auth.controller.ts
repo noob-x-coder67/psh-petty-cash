@@ -1,13 +1,15 @@
 import { randomBytes } from "node:crypto";
 import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res, UnauthorizedException, UseGuards } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { LoginRequestSchema, type LoginRequest } from "@psh/contracts";
+import { ChangePasswordRequestSchema, LoginRequestSchema, type ChangePasswordRequest, type LoginRequest } from "@psh/contracts";
 import type { CookieOptions, Request, Response } from "express";
 import { Audited } from "../../common/decorators/audited.decorator";
+import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Public } from "../../common/decorators/public.decorator";
 import { CSRF_TOKEN_COOKIE, CsrfGuard } from "../../common/guards/csrf.guard";
 import { ACCESS_TOKEN_COOKIE } from "../../common/guards/jwt-auth.guard";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
+import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AuthService } from "./auth.service";
 
 const REFRESH_TOKEN_COOKIE = "psh_refresh_token";
@@ -91,6 +93,29 @@ export class AuthController {
     return { success: true };
   }
 
+  // Not @Public — JwtAuthGuard (global) requires a valid session, which is exactly the
+  // point: this both closes the forced mustChangePassword loop and serves as an ordinary
+  // self-service change for any logged-in user. CsrfGuard matches every other
+  // state-changing route on this controller.
+  @UseGuards(CsrfGuard)
+  @Post("change-password")
+  @HttpCode(HttpStatus.OK)
+  @Audited({ action: "PASSWORD_CHANGE", entityType: "users" })
+  async changePassword(
+    @Body(new ZodValidationPipe(ChangePasswordRequestSchema)) body: ChangePasswordRequest,
+    @CurrentUser() user: AuthenticatedUser,
+    @Req() req: Request,
+  ): Promise<{ success: true }> {
+    await this.authService.changePassword({
+      userId: user.id,
+      currentPassword: body.currentPassword,
+      newPassword: body.newPassword,
+      ipAddress: req.ip ?? null,
+      userAgent: req.headers["user-agent"] ?? null,
+    });
+    return { success: true };
+  }
+
   private setSessionCookies(res: Response, accessToken: string, refreshToken: string): void {
     res.cookie(ACCESS_TOKEN_COOKIE, accessToken, cookieOptions(ACCESS_TOKEN_TTL_MS, true));
     res.cookie(REFRESH_TOKEN_COOKIE, refreshToken, cookieOptions(REFRESH_TOKEN_TTL_MS, true));
@@ -103,4 +128,5 @@ interface SessionUser {
   id: string;
   email: string;
   fullName: string;
+  mustChangePassword: boolean;
 }
