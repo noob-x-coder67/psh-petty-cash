@@ -44,6 +44,13 @@ export class ReplenishmentsController {
     return this.replenishmentsService.confirmReplenishment(id, body, user);
   }
 
+  @Get("replenishments/pending/:unitId")
+  @RequiresPermission("allocation.confirm_receipt")
+  @RequiresUnitScope("param.unitId")
+  async listPending(@Param("unitId") unitId: string, @CurrentUser() user: AuthenticatedUser): Promise<Replenishment[]> {
+    return this.replenishmentsService.listPending(unitId, user);
+  }
+
   @Get("compliance/:unitId")
   @RequiresPermission("dashboard.view_own_unit")
   @RequiresUnitScope("param.unitId")

@@ -1,11 +1,11 @@
-import { Body, Controller, Param, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post } from "@nestjs/common";
 import {
   ConfirmAllocationRequestSchema,
   CreateAllocationRequestSchema,
+  type Allocation,
   type ConfirmAllocationRequest,
   type CreateAllocationRequest,
 } from "@psh/contracts";
-import type { CashAllocation } from "@prisma/client";
 import { Audited } from "../../common/decorators/audited.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { RequiresPermission } from "../../common/decorators/requires-permission.decorator";
@@ -18,6 +18,13 @@ import { AllocationsService } from "./allocations.service";
 export class AllocationsController {
   constructor(private readonly allocationsService: AllocationsService) {}
 
+  @Get("pending/:unitId")
+  @RequiresPermission("allocation.confirm_receipt")
+  @RequiresUnitScope("param.unitId")
+  async listPending(@Param("unitId") unitId: string, @CurrentUser() user: AuthenticatedUser): Promise<Allocation[]> {
+    return this.allocationsService.listPending(unitId, user);
+  }
+
   @Post()
   @RequiresPermission("allocation.record")
   @RequiresUnitScope("body.unitId")
@@ -25,7 +32,7 @@ export class AllocationsController {
   async create(
     @Body(new ZodValidationPipe(CreateAllocationRequestSchema)) body: CreateAllocationRequest,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<CashAllocation> {
+  ): Promise<Allocation> {
     return this.allocationsService.createAllocation({ ...body, issuer: user });
   }
 
@@ -37,7 +44,7 @@ export class AllocationsController {
     @Param("id") id: string,
     @Body(new ZodValidationPipe(ConfirmAllocationRequestSchema)) body: ConfirmAllocationRequest,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<CashAllocation> {
+  ): Promise<Allocation> {
     return this.allocationsService.confirmAllocation({
       allocationId: id,
       confirmedAmount: body.confirmedAmount,

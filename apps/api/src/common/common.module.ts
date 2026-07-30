@@ -15,6 +15,11 @@ if (!authSecret) {
   throw new Error("AUTH_SECRET is not set — refusing to start with an undefined JWT signing secret.");
 }
 
+// Exported so SettingsService (admin read-only configuration screen) can report the
+// actually-effective values instead of duplicating these literals.
+export const DEFAULT_THROTTLE_TTL_MS = 60_000;
+export const DEFAULT_THROTTLE_LIMIT = 100;
+
 @Global()
 @Module({
   imports: [
@@ -23,7 +28,7 @@ if (!authSecret) {
       signOptions: { expiresIn: "15m" },
     }),
     // Global default; /auth/login overrides with a stricter bucket (Build Plan §6.5).
-    ThrottlerModule.forRoot([{ name: "default", ttl: 60_000, limit: 100 }]),
+    ThrottlerModule.forRoot([{ name: "default", ttl: DEFAULT_THROTTLE_TTL_MS, limit: DEFAULT_THROTTLE_LIMIT }]),
   ],
   providers: [
     PrismaService,

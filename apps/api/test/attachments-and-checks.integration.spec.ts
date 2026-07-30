@@ -251,6 +251,9 @@ describe("Checked/Unchecked (BR-008, FR-CHK-001..007)", () => {
       .expect(403);
   });
 
+  // Rare unresolved test:int flake seen here (~1-in-6 full-suite runs, not reproducible
+  // in isolation) — see docs/known-issues.md before spending time re-diagnosing from
+  // scratch.
   it("reverting to Unchecked requires a reason and is recorded in history", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
     const voucher = await createVoucher("PSH-SOH", cookies);

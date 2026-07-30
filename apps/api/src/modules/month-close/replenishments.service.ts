@@ -118,6 +118,16 @@ export class ReplenishmentsService {
     return this.toContractShape(created);
   }
 
+  async listPending(unitId: string, actor: AuthenticatedUser): Promise<Replenishment[]> {
+    this.assertUnitScope(unitId, actor);
+    const account = await this.accountsRepository.findByUnitId(unitId);
+    if (!account) {
+      throw new NotFoundException(`Unit ${unitId} has no petty-cash account`);
+    }
+    const pending = await this.replenishmentsRepository.findPending(account.id);
+    return pending.map((row) => this.toContractShape(row));
+  }
+
   async confirmReplenishment(
     id: string,
     input: ConfirmReplenishmentRequest,

@@ -18,3 +18,20 @@ export const ConfirmAllocationRequestSchema = z.object({
   confirmedDate: z.iso.date(),
 });
 export type ConfirmAllocationRequest = z.infer<typeof ConfirmAllocationRequestSchema>;
+
+// Mirrors ReplenishmentSchema (replenishments.ts) minus the compliance-specific fields
+// (isCompliant/exceptionReason/etc.) — BR-013's three-month hold never applies to
+// Allocations, only Replenishments.
+export const AllocationSchema = z.object({
+  id: z.string().uuid(),
+  unitId: z.string().uuid(),
+  amount: z.string(),
+  issueDate: z.iso.date(),
+  referenceNo: z.string().nullable(),
+  paymentMode: z.string().nullable(),
+  remarks: z.string().nullable(),
+  confirmedAmount: z.string().nullable(),
+  confirmedDate: z.iso.date().nullable(),
+  confirmedAt: z.string().nullable(),
+});
+export type Allocation = z.infer<typeof AllocationSchema>;

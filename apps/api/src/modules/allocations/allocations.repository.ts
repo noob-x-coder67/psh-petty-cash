@@ -31,6 +31,13 @@ export class AllocationsRepository {
     return this.prisma.cashAllocation.findUnique({ where: { idempotencyKey: key } });
   }
 
+  async findPendingByAccountId(accountId: string): Promise<CashAllocation[]> {
+    return this.prisma.cashAllocation.findMany({
+      where: { accountId, confirmedAt: null },
+      orderBy: { issueDate: "desc" },
+    });
+  }
+
   async markConfirmed(
     id: string,
     confirmedAmount: string,

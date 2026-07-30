@@ -10,4 +10,6 @@ export * from "./replenishments.js";
 export * from "./report-datasets.js";
 export * from "./report-filters.js";
 export * from "./reports.js";
+export * from "./roles.js";
+export * from "./settings.js";
 export * from "./users.js";

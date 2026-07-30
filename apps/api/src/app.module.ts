@@ -10,6 +10,8 @@ import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { MonthCloseModule } from "./modules/month-close/month-close.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { ReportsModule } from "./modules/reports/reports.module";
+import { RolesModule } from "./modules/roles/roles.module";
+import { SettingsModule } from "./modules/settings/settings.module";
 import { UsersModule } from "./modules/users/users.module";
 
 @Module({
@@ -26,6 +28,8 @@ import { UsersModule } from "./modules/users/users.module";
     ReportsModule,
     MonthCloseModule,
     UsersModule,
+    RolesModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

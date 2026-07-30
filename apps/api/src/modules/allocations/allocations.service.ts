@@ -1,5 +1,6 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type CashAllocation } from "@prisma/client";
+import type { Allocation } from "@psh/contracts";
 import { AuditLogRepository } from "../../common/audit/audit-log.repository";
 import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repository";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -35,12 +36,16 @@ export class AllocationsService {
     private readonly prisma: PrismaService,
   ) {}
 
-  async createAllocation(input: CreateAllocationInput): Promise<CashAllocation> {
+  async createAllocation(input: CreateAllocationInput): Promise<Allocation> {
     // FR-REP-006-style idempotent replay: the same key returns the original record
     // rather than erroring, so a retried request is never double-recorded.
     const existing = await this.allocationsRepository.findByIdempotencyKey(input.idempotencyKey);
     if (existing) {
-      return existing;
+      const existingAccount = await this.accountsRepository.findById(existing.accountId);
+      if (!existingAccount) {
+        throw new NotFoundException(`Account ${existing.accountId} not found`);
+      }
+      return this.toContractShape(existing, existingAccount.unitId);
     }
 
     const account = await this.accountsRepository.findByUnitId(input.unitId);
@@ -48,8 +53,8 @@ export class AllocationsService {
       throw new NotFoundException(`Unit ${input.unitId} has no petty-cash account`);
     }
 
-    return this.prisma.$transaction(async (tx) => {
-      const allocation = await this.allocationsRepository.create(
+    const allocation = await this.prisma.$transaction(async (tx) => {
+      const created = await this.allocationsRepository.create(
         {
           accountId: account.id,
           amount: input.amount,
@@ -67,15 +72,26 @@ export class AllocationsService {
         actorRole: input.issuer.roleKeys[0] ?? null,
         action: "ALLOCATION_CREATE",
         entityType: "cash_allocations",
-        entityId: allocation.id,
+        entityId: created.id,
         unitId: account.unitId,
-        after: allocation,
+        after: created,
       });
-      return allocation;
+      return created;
     });
+    return this.toContractShape(allocation, account.unitId);
   }
 
-  async confirmAllocation(input: ConfirmAllocationInput): Promise<CashAllocation> {
+  async listPending(unitId: string, actor: AuthenticatedUser): Promise<Allocation[]> {
+    this.assertUnitScope(unitId, actor);
+    const account = await this.accountsRepository.findByUnitId(unitId);
+    if (!account) {
+      throw new NotFoundException(`Unit ${unitId} has no petty-cash account`);
+    }
+    const pending = await this.allocationsRepository.findPendingByAccountId(account.id);
+    return pending.map((row) => this.toContractShape(row, unitId));
+  }
+
+  async confirmAllocation(input: ConfirmAllocationInput): Promise<Allocation> {
     const allocation = await this.allocationsRepository.findById(input.allocationId);
     if (!allocation) {
       throw new NotFoundException(`Allocation ${input.allocationId} not found`);
@@ -99,7 +115,7 @@ export class AllocationsService {
     // Ledger post, allocation confirmation, and the audit row all commit or roll back
     // together — a crash between "ledger posted" and "allocation marked confirmed"
     // must never happen (this used to be two separate transactions; fixed here).
-    return this.prisma.$transaction(async (tx) => {
+    const confirmed = await this.prisma.$transaction(async (tx) => {
       await this.ledgerPostingRepository.postEntryWithTx(tx, {
         accountId: allocation.accountId,
         entryType: "ALLOCATION",
@@ -111,7 +127,7 @@ export class AllocationsService {
         createdBy: input.confirmedBy.id,
       });
 
-      const confirmed = await this.allocationsRepository.markConfirmed(
+      const result = await this.allocationsRepository.markConfirmed(
         allocation.id,
         input.confirmedAmount,
         new Date(input.confirmedDate),
@@ -124,13 +140,44 @@ export class AllocationsService {
         actorRole: input.confirmedBy.roleKeys[0] ?? null,
         action: "ALLOCATION_CONFIRM",
         entityType: "cash_allocations",
-        entityId: confirmed.id,
+        entityId: result.id,
         unitId: account.unitId,
         before: allocation,
-        after: confirmed,
+        after: result,
       });
 
-      return confirmed;
+      return result;
     });
+    return this.toContractShape(confirmed, account.unitId);
+  }
+
+  // Mirrors replenishments.service.ts's toContractShape — same Decimal->string /
+  // Date->ISO-date-string conversions, so the wire shape is consistent across both
+  // create-then-confirm cash-flow features.
+  private toContractShape(row: CashAllocation, unitId: string): Allocation {
+    return {
+      id: row.id,
+      unitId,
+      amount: row.amount.toFixed(2),
+      issueDate: row.issueDate.toISOString().slice(0, 10),
+      referenceNo: row.referenceNo,
+      paymentMode: row.paymentMode,
+      remarks: row.remarks,
+      confirmedAmount: row.confirmedAmount ? row.confirmedAmount.toFixed(2) : null,
+      confirmedDate: row.confirmedDate ? row.confirmedDate.toISOString().slice(0, 10) : null,
+      confirmedAt: row.confirmedAt ? row.confirmedAt.toISOString() : null,
+    };
+  }
+
+  // Defense in depth alongside the controller's @RequiresUnitScope("param.unitId") —
+  // same reasoning as every other independently-checked layer in this codebase (e.g.
+  // BR-016's PSH-ISB guard existing at both the service and DB-constraint layers).
+  private assertUnitScope(unitId: string, actor: AuthenticatedUser): void {
+    if (actor.unitScope.all) {
+      return;
+    }
+    if (!actor.unitScope.unitIds.includes(unitId)) {
+      throw new ForbiddenException("Unit is outside your authorized scope");
+    }
   }
 }

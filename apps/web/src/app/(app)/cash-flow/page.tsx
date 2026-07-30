@@ -24,6 +24,10 @@ export default async function CashFlowPage({
   }
 
   return (
-    <CashFlowWorkspace unit={selected} canOverrideHold={user.permissionKeys.includes("compliance.override_three_month_hold")} />
+    <CashFlowWorkspace
+      unit={selected}
+      canOverrideHold={user.permissionKeys.includes("compliance.override_three_month_hold")}
+      canConfirm={user.permissionKeys.includes("allocation.confirm_receipt")}
+    />
   );
 }

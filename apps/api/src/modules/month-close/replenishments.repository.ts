@@ -42,6 +42,14 @@ export class ReplenishmentsRepository {
     return this.prisma.replenishment.findUnique({ where: { id }, include: REPLENISHMENT_INCLUDE });
   }
 
+  async findPending(accountId: string): Promise<ReplenishmentWithRelations[]> {
+    return this.prisma.replenishment.findMany({
+      where: { accountId, confirmedAt: null },
+      include: REPLENISHMENT_INCLUDE,
+      orderBy: { issueDate: "desc" },
+    });
+  }
+
   async markConfirmed(
     id: string,
     confirmedAmount: Prisma.Decimal,

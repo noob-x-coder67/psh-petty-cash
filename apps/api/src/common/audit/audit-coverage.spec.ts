@@ -16,6 +16,8 @@ import { OrganizationController } from "../../modules/organization/organization.
 import { ExportsController } from "../../modules/reports/exports.controller";
 import { PresetsController } from "../../modules/reports/presets.controller";
 import { ReportsController } from "../../modules/reports/reports.controller";
+import { RolesController } from "../../modules/roles/roles.controller";
+import { SettingsController } from "../../modules/settings/settings.controller";
 import { UsersController } from "../../modules/users/users.controller";
 import { AUDITED_KEY } from "../decorators/audited.decorator";
 
@@ -44,6 +46,8 @@ const ALL_CONTROLLERS: Constructor[] = [
   ExportsController,
   PresetsController,
   UsersController,
+  RolesController,
+  SettingsController,
 ];
 
 const MUTATING_METHODS = new Set<RequestMethod>([

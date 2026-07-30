@@ -5,10 +5,10 @@ import { Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, Label }
 import { useState } from "react";
 import { useReplenishment } from "./use-replenishment";
 
-// Creation only — like CashAllocation, a Replenishment is a create-then-confirm flow
-// (§14.4: only *confirmed* replenishments count toward the balance), and confirmation
-// has no dedicated UI yet in this demo, matching the pre-existing gap for Allocation
-// confirmation (never built a UI either — both are exercised via the API/tests today).
+// Creation only — confirming receipt now happens in pending-confirmations.tsx, the
+// single place both Allocations and Replenishments get confirmed from (see
+// allocation-form.tsx's comment for why the earlier per-form inline confirm step was
+// removed). §14.4: only *confirmed* replenishments count toward the balance.
 export function ReplenishmentForm({
   unitId,
   compliance,
@@ -136,13 +136,7 @@ export function ReplenishmentForm({
         <div>
           <Button
             onClick={handleSubmit}
-            disabled={
-              isCreating ||
-              !amount ||
-              !issueDate ||
-              blocked ||
-              (needsException && !exceptionReason.trim())
-            }
+            disabled={isCreating || !amount || !issueDate || blocked || (needsException && !exceptionReason.trim())}
           >
             {isCreating ? "Recording..." : "Record Replenishment"}
           </Button>

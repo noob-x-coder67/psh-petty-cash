@@ -4,12 +4,19 @@ import type { OrganizationalUnit } from "@psh/contracts";
 import { Card, CardContent, CardHeader, CardTitle } from "@psh/ui";
 import { ComplianceTimeline } from "../month-close/compliance-timeline";
 import { useCompliance } from "../month-close/use-compliance";
+import { AllocationForm } from "./allocation-form";
+import { PendingConfirmations } from "./pending-confirmations";
 import { ReplenishmentForm } from "./replenishment-form";
 
-// Scoped to what Phase 7 asks for: replenishment recording + compliance visibility.
-// Allocation recording has no UI yet either (a pre-existing gap from Phase 2/5, not
-// introduced here) — both are exercised via the API/integration tests today.
-export function CashFlowWorkspace({ unit, canOverrideHold }: { unit: OrganizationalUnit; canOverrideHold: boolean }) {
+export function CashFlowWorkspace({
+  unit,
+  canOverrideHold,
+  canConfirm,
+}: {
+  unit: OrganizationalUnit;
+  canOverrideHold: boolean;
+  canConfirm: boolean;
+}) {
   const { data: compliance } = useCompliance(unit.id);
 
   return (
@@ -31,6 +38,10 @@ export function CashFlowWorkspace({ unit, canOverrideHold }: { unit: Organizatio
           </CardContent>
         </Card>
       ) : null}
+
+      <PendingConfirmations unitId={unit.id} canConfirm={canConfirm} />
+
+      <AllocationForm unitId={unit.id} />
 
       <ReplenishmentForm unitId={unit.id} compliance={compliance} canOverrideHold={canOverrideHold} />
     </div>
