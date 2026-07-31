@@ -12,7 +12,7 @@ export function BrandLogo() {
       width={130}
       height={130}
       priority
-      className="h-20 w-20 object-contain sm:h-28 sm:w-28 lg:h-[130px] lg:w-[130px]"
+      className="h-20 w-20 object-contain sm:h-28 sm:w-28 lg:h-32.5 lg:w-32.5"
     />
   );
 }
