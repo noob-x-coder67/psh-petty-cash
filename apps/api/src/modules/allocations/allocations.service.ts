@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma, type CashAllocation } from "@prisma/client";
+import type { CashAllocation } from "@prisma/client";
 import type { Allocation } from "@psh/contracts";
 import { AuditLogRepository } from "../../common/audit/audit-log.repository";
 import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repository";
@@ -21,7 +21,6 @@ export interface CreateAllocationInput {
 
 export interface ConfirmAllocationInput {
   allocationId: string;
-  confirmedAmount: string;
   confirmedDate: string;
   confirmedBy: AuthenticatedUser;
 }
@@ -112,6 +111,9 @@ export class AllocationsService {
       throw new ForbiddenException("Allocation is outside your authorized scope");
     }
 
+    // ADR-0009: confirmation is a locked, exact-match attestation against the original
+    // allocated amount — cash is handed over hand-to-hand, so the amount is never
+    // client-supplied and never varies. No variance check, no remarks.
     // Ledger post, allocation confirmation, and the audit row all commit or roll back
     // together — a crash between "ledger posted" and "allocation marked confirmed"
     // must never happen (this used to be two separate transactions; fixed here).
@@ -120,7 +122,7 @@ export class AllocationsService {
         accountId: allocation.accountId,
         entryType: "ALLOCATION",
         direction: 1,
-        amount: new Prisma.Decimal(input.confirmedAmount),
+        amount: allocation.amount,
         effectiveDate: new Date(input.confirmedDate),
         sourceTable: "cash_allocations",
         sourceId: allocation.id,
@@ -129,9 +131,10 @@ export class AllocationsService {
 
       const result = await this.allocationsRepository.markConfirmed(
         allocation.id,
-        input.confirmedAmount,
+        allocation.amount.toFixed(2),
         new Date(input.confirmedDate),
         input.confirmedBy.id,
+        undefined,
         tx,
       );
 
@@ -166,6 +169,7 @@ export class AllocationsService {
       confirmedAmount: row.confirmedAmount ? row.confirmedAmount.toFixed(2) : null,
       confirmedDate: row.confirmedDate ? row.confirmedDate.toISOString().slice(0, 10) : null,
       confirmedAt: row.confirmedAt ? row.confirmedAt.toISOString() : null,
+      confirmedVarianceRemarks: row.confirmedVarianceRemarks,
     };
   }
 

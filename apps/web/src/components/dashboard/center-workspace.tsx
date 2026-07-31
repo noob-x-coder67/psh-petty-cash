@@ -23,9 +23,11 @@ const ENTRY_TYPE_LABEL: Record<string, string> = {
 export function CenterWorkspace({
   data,
   compliance,
+  canCreateExpense,
 }: {
   data: DashboardUnitResponse;
   compliance: ComplianceResponse;
+  canCreateExpense: boolean;
 }) {
   const reducedMotion = usePrefersReducedMotion();
   const isNegative = Number(data.balance) < 0;
@@ -42,9 +44,11 @@ export function CenterWorkspace({
           <h1 className="text-lg font-semibold text-ink">{data.unit.name}</h1>
           <p className="text-sm text-ink-muted">{data.unit.code}</p>
         </div>
-        <Button asChild>
-          <Link href="/expenses/new">New Expense</Link>
-        </Button>
+        {canCreateExpense ? (
+          <Button asChild>
+            <Link href="/expenses/new">New Expense</Link>
+          </Button>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">

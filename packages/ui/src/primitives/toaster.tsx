@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
+import { randomUuid } from "../lib/random-uuid.js";
 import { Toast, ToastDescription, ToastProvider, ToastTitle, ToastViewport } from "./toast.js";
 
 // Minimal imperative toast store (the standard shadcn `use-toast` reducer pattern) —
@@ -24,7 +25,7 @@ function emit(): void {
 }
 
 export function toast(item: Omit<ToastItem, "id">): void {
-  const id = crypto.randomUUID();
+  const id = randomUuid();
   toasts = [...toasts, { id, duration: 5000, ...item }];
   emit();
 }

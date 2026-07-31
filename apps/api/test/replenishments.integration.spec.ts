@@ -12,8 +12,9 @@ import { PrismaService } from "../src/common/prisma/prisma.service";
 // blocked when any of three preceding months is not CLOSED; exception recorded with
 // actor/reason/time; timeline renders correctly across a year boundary." The
 // year-boundary math itself is exhaustively unit-tested in replenishments.rules.spec.ts
-// (every rollover case); this file proves the whole stack wires that logic up correctly
-// against a real database, real permissions, and a real ledger post on confirmation.
+// (every rollover case); the hold/exception/override behavior against a real database is
+// now covered end-to-end in replenishment-requests.integration.spec.ts (ADR-0010). This
+// file proves what didn't move: the compliance timeline read and confirming receipt.
 
 let app: INestApplication;
 let prisma: PrismaService;
@@ -38,63 +39,12 @@ async function loginAs(email: string): Promise<string[]> {
   return cookies;
 }
 
-// Computed in beforeAll, not randomized — see month-close.integration.spec.ts's beforeAll
-// for the full reasoning. monthly_closings has DELETE revoked from psh_app by design (a
-// genuine financial-record immutability rule, migration 20260727101836), so this can't be
-// reset by deletion; instead every run's BASE_YEAR is computed strictly greater than any
-// year PSH-COE's monthly_closings has ever contained, which is permanent isolation
-// without deleting anything.
-let BASE_YEAR: number;
-
-function ym(monthOffset: number): { year: number; month: number } {
-  // monthOffset 0 => (BASE_YEAR, 1); handles rollover the same way the app does.
-  let year = BASE_YEAR;
-  let month = 1 + monthOffset;
-  while (month > 12) {
-    month -= 12;
-    year += 1;
-  }
-  return { year, month };
-}
-
-async function recordAndClose(unitId: string, year: number, month: number, cookies: string[]): Promise<void> {
-  const before = await request(app.getHttpServer())
-    .get(`/monthly-close/${unitId}/${year}/${month}`)
-    .set("Cookie", cookies)
-    .expect(200);
-  const recorded = await request(app.getHttpServer())
-    .post("/monthly-close")
-    .set("Cookie", cookies)
-    .send({ unitId, periodYear: year, periodMonth: month, physicalCashCount: before.body.expectedBalance })
-    .expect(201);
-  await request(app.getHttpServer())
-    .post(`/monthly-close/${recorded.body.id}/close`)
-    .set("Cookie", cookies)
-    .expect(201);
-}
-
 beforeAll(async () => {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
   app = moduleRef.createNestApplication();
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
-
-  // The three-month-compliance checks (ym(1)/ym(2)/ym(3) writes, ym(10)/ym(20) "never
-  // touched" reads) are the only part of this file vulnerable to cross-run collision —
-  // computing BASE_YEAR past PSH-COE's own historical max fixes that permanently (see
-  // the comment above). The `replenishments` rows and ledger entries these tests also
-  // write need no such fix: every assertion on them is either scoped to a specific
-  // just-created id/referenceNo or delta-based (`after.cachedBalance` vs
-  // `before.cachedBalance.plus(amount)`), never an absolute or aggregate count, so
-  // accumulating history in those tables is harmless.
-  const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-  const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
-  const maxYear = await prisma.monthlyClosing.aggregate({
-    where: { accountId: account.id },
-    _max: { periodYear: true },
-  });
-  BASE_YEAR = (maxYear._max.periodYear ?? 2399) + 1;
 });
 
 afterAll(async () => {
@@ -127,206 +77,49 @@ describe("GET /compliance/:unitId", () => {
   });
 });
 
-describe("POST /replenishments — three-month hold (Phase 7 exit gate)", () => {
-  it("is blocked with 409 when a preceding month has never been closed", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-    const financeCookies = await loginAs("financeofficer@psh.local");
-    const target = ym(10); // nothing recorded for months 7/8/9 in this fresh BASE_YEAR block
-
-    await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeCookies)
-      .send({
-        unitId: unit.id,
-        amount: "1000.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-15`,
-        idempotencyKey: randomUUID(),
-      })
-      .expect(409);
-  });
-
-  it("succeeds once all 3 preceding months are CLOSED", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-    const financeManagerCookies = await loginAs("financemanager@psh.local");
-    const financeOfficerCookies = await loginAs("financeofficer@psh.local");
-
-    const m1 = ym(1);
-    const m2 = ym(2);
-    const m3 = ym(3);
-    const target = ym(4);
-    await recordAndClose(unit.id, m1.year, m1.month, financeManagerCookies);
-    await recordAndClose(unit.id, m2.year, m2.month, financeManagerCookies);
-    await recordAndClose(unit.id, m3.year, m3.month, financeManagerCookies);
-
-    const res = await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeOfficerCookies)
-      .send({
-        unitId: unit.id,
-        amount: "5000.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-05`,
-        referenceNo: `COMPLIANT-${randomUUID()}`,
-        idempotencyKey: randomUUID(),
-      })
-      .expect(201);
-
-    expect(res.body.isCompliant).toBe(true);
-    expect(res.body.exceptionReason).toBeNull();
-  });
-
-  it("a Finance Officer (no override permission) is blocked even when non-compliant, with or without a reason", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-    const financeOfficerCookies = await loginAs("financeofficer@psh.local");
-    const target = ym(20); // block of months with no closings recorded at all
-
-    await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeOfficerCookies)
-      .send({
-        unitId: unit.id,
-        amount: "1000.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-10`,
-        exceptionReason: "I would like to override this please",
-        idempotencyKey: randomUUID(),
-      })
-      .expect(409);
-  });
-
-  it("a Finance Manager overriding without a reason gets 400", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-    const financeManagerCookies = await loginAs("financemanager@psh.local");
-    const target = ym(24);
-
-    await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeManagerCookies)
-      .send({
-        unitId: unit.id,
-        amount: "1000.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-10`,
-        idempotencyKey: randomUUID(),
-      })
-      .expect(400);
-  });
-
-  it("a Finance Manager overriding with a reason succeeds, recording actor/reason/time (FR-REP-004)", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-    const financeManagerCookies = await loginAs("financemanager@psh.local");
-    const target = ym(28);
-
-    const res = await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeManagerCookies)
-      .send({
-        unitId: unit.id,
-        amount: "2500.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-10`,
-        exceptionReason: "Unit relocated mid-quarter; closings will be backfilled",
-        idempotencyKey: randomUUID(),
-      })
-      .expect(201);
-
-    expect(res.body.isCompliant).toBe(false);
-    expect(res.body.exceptionReason).toContain("relocated");
-    expect(res.body.exceptionByName).toBe("Finance Manager");
-    expect(res.body.exceptionAt).not.toBeNull();
-
-    const auditRows = await prisma.auditLog.findMany({
-      where: { entityType: "replenishments", action: "REPLENISHMENT_CREATE" },
-      orderBy: { occurredAt: "desc" },
-      take: 1,
-    });
-    expect(auditRows[0]?.reason).toContain("relocated");
-  });
-
-  it("rejects a duplicate reference number on the same account with 409", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-    const financeManagerCookies = await loginAs("financemanager@psh.local");
-    const target = ym(32);
-    const reference = `DUP-${randomUUID()}`;
-
-    await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeManagerCookies)
-      .send({
-        unitId: unit.id,
-        amount: "500.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-01`,
-        referenceNo: reference,
-        exceptionReason: "test duplicate reference",
-        idempotencyKey: randomUUID(),
-      })
-      .expect(201);
-
-    await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeManagerCookies)
-      .send({
-        unitId: unit.id,
-        amount: "600.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-02`,
-        referenceNo: reference,
-        exceptionReason: "test duplicate reference again",
-        idempotencyKey: randomUUID(),
-      })
-      .expect(409);
-  });
-
-  it("idempotencyKey replay returns the original replenishment instead of creating a duplicate", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
-    const financeManagerCookies = await loginAs("financemanager@psh.local");
-    const target = ym(36);
-    const key = randomUUID();
-    const payload = {
-      unitId: unit.id,
-      amount: "700.00",
-      issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-01`,
-      exceptionReason: "idempotency test",
-      idempotencyKey: key,
-    };
-
-    const first = await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeManagerCookies)
-      .send(payload)
-      .expect(201);
-    const second = await request(app.getHttpServer())
-      .post("/replenishments")
-      .set("Cookie", financeManagerCookies)
-      .send(payload)
-      .expect(201);
-    expect(second.body.id).toBe(first.body.id);
-  });
-});
+// ADR-0010: direct-create (POST /replenishments) is gone. Everything that used to be
+// covered here — the three-month hold at creation, the exception/override path,
+// duplicate-reference conflicts, idempotency replay — now lives in
+// replenishment-requests.integration.spec.ts, against the new submit/approve/override
+// endpoints. This file keeps only what those endpoints didn't change: the compliance
+// timeline (above) and confirming receipt (below), fixture-created via the override
+// path since it's the equivalent single-step atomic creation the old direct-create was.
 
 describe("POST /replenishments/:id/confirm", () => {
+  // PSH-SUK — ADR-0008 removed allocation.confirm_receipt from Finance Manager/Super
+  // Admin, and PSH-SUK has a seeded UNIT_USER (user.sukkur) able to confirm on its
+  // behalf. PSH-SUK has no real-dated monthly closings (only synthetic far-future ones
+  // elsewhere in this suite), so it's genuinely BR-013-held for "now" and the override
+  // path accepts it — the three-month hold isn't what's under test here.
   it("posts a REPLENISHMENT ledger entry and updates the account balance", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const before = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { id: account.id } });
 
     const financeManagerCookies = await loginAs("financemanager@psh.local");
-    const target = ym(40);
     const createRes = await request(app.getHttpServer())
-      .post("/replenishments")
+      .post("/replenishment-requests/override")
       .set("Cookie", financeManagerCookies)
       .send({
         unitId: unit.id,
         amount: "1234.56",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-01`,
+        reason: "confirm-flow test",
+        issueDate: "2026-06-01",
         exceptionReason: "confirm-flow test",
         idempotencyKey: randomUUID(),
       })
       .expect(201);
+    const replenishmentId = createRes.body.replenishmentId as string;
 
+    const sukkurCookies = await loginAs("user.sukkur@psh.local");
     await request(app.getHttpServer())
-      .post(`/replenishments/${createRes.body.id}/confirm`)
-      .set("Cookie", financeManagerCookies)
-      .send({ confirmedAmount: "1234.56", confirmedDate: `${target.year}-${String(target.month).padStart(2, "0")}-02` })
+      .post(`/replenishments/${replenishmentId}/confirm`)
+      .set("Cookie", sukkurCookies)
+      .send({ confirmedDate: "2026-06-02" })
       .expect(201);
 
     const ledgerEntries = await prisma.cashLedgerEntry.findMany({
-      where: { sourceTable: "replenishments", sourceId: createRes.body.id },
+      where: { sourceTable: "replenishments", sourceId: replenishmentId },
     });
     expect(ledgerEntries).toHaveLength(1);
     expect(ledgerEntries[0]?.entryType).toBe("REPLENISHMENT");
@@ -337,31 +130,57 @@ describe("POST /replenishments/:id/confirm", () => {
   });
 
   it("rejects confirming the same replenishment twice", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
     const financeManagerCookies = await loginAs("financemanager@psh.local");
-    const target = ym(44);
     const createRes = await request(app.getHttpServer())
-      .post("/replenishments")
+      .post("/replenishment-requests/override")
       .set("Cookie", financeManagerCookies)
       .send({
         unitId: unit.id,
         amount: "100.00",
-        issueDate: `${target.year}-${String(target.month).padStart(2, "0")}-01`,
+        reason: "double-confirm test",
+        issueDate: "2026-06-01",
         exceptionReason: "double-confirm test",
         idempotencyKey: randomUUID(),
       })
       .expect(201);
+    const replenishmentId = createRes.body.replenishmentId as string;
 
+    const sukkurCookies = await loginAs("user.sukkur@psh.local");
     await request(app.getHttpServer())
-      .post(`/replenishments/${createRes.body.id}/confirm`)
-      .set("Cookie", financeManagerCookies)
-      .send({ confirmedAmount: "100.00", confirmedDate: `${target.year}-${String(target.month).padStart(2, "0")}-02` })
+      .post(`/replenishments/${replenishmentId}/confirm`)
+      .set("Cookie", sukkurCookies)
+      .send({ confirmedDate: "2026-06-02" })
       .expect(201);
 
     await request(app.getHttpServer())
-      .post(`/replenishments/${createRes.body.id}/confirm`)
-      .set("Cookie", financeManagerCookies)
-      .send({ confirmedAmount: "100.00", confirmedDate: `${target.year}-${String(target.month).padStart(2, "0")}-02` })
+      .post(`/replenishments/${replenishmentId}/confirm`)
+      .set("Cookie", sukkurCookies)
+      .send({ confirmedDate: "2026-06-02" })
       .expect(409);
+  });
+
+  it("Finance Manager gets 403 confirming a replenishment (ADR-0008)", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
+    const financeManagerCookies = await loginAs("financemanager@psh.local");
+    const createRes = await request(app.getHttpServer())
+      .post("/replenishment-requests/override")
+      .set("Cookie", financeManagerCookies)
+      .send({
+        unitId: unit.id,
+        amount: "100.00",
+        reason: "ADR-0008 negative-permission test",
+        issueDate: "2026-06-01",
+        exceptionReason: "ADR-0008 negative-permission test",
+        idempotencyKey: randomUUID(),
+      })
+      .expect(201);
+    const replenishmentId = createRes.body.replenishmentId as string;
+
+    await request(app.getHttpServer())
+      .post(`/replenishments/${replenishmentId}/confirm`)
+      .set("Cookie", financeManagerCookies)
+      .send({ confirmedDate: "2026-06-02" })
+      .expect(403);
   });
 });

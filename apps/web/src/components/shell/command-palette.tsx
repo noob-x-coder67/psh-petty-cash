@@ -25,14 +25,21 @@ const COMMANDS: Command[] = [
 export interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  canCreateExpense: boolean;
 }
 
-export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
+export function CommandPalette({ open, onOpenChange, canCreateExpense }: CommandPaletteProps) {
   const router = useRouter();
   const [query, setQuery] = useState("");
+  // expense.create is only granted to Unit User/In-Charge (seed-data.ts) — hidden here
+  // rather than shown-and-rejected, matching every other permission-gated action in this
+  // codebase (e.g. pending-confirmations.tsx's canConfirm, workspace-tabs.tsx's admin tab).
   const filtered = useMemo(
-    () => COMMANDS.filter((command) => command.label.toLowerCase().includes(query.toLowerCase())),
-    [query],
+    () =>
+      COMMANDS.filter((command) => command.href !== "/expenses/new" || canCreateExpense).filter((command) =>
+        command.label.toLowerCase().includes(query.toLowerCase()),
+      ),
+    [query, canCreateExpense],
   );
 
   useEffect(() => {

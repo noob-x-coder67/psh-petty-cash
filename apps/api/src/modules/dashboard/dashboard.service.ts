@@ -34,7 +34,7 @@ export class DashboardService {
 
     const [cashIssued, spending, uncheckedQueueRows, uncheckedCounts] = await Promise.all([
       this.dashboardRepository.sumLedgerByType(accountIds, ["ALLOCATION", "REPLENISHMENT"], period),
-      this.dashboardRepository.sumLedgerByType(accountIds, ["EXPENSE"], period),
+      this.dashboardRepository.sumNetSpend(accountIds, period),
       this.dashboardRepository.listUncheckedQueue(accountIds, 10),
       Promise.all(accounts.map((account) => this.dashboardRepository.countUncheckedForAccount(account.id))),
     ]);
@@ -103,7 +103,7 @@ export class DashboardService {
     const period = currentKarachiPeriod();
     const [cashReceived, spent, recentEntries] = await Promise.all([
       this.dashboardRepository.sumLedgerByType([account.id], ["ALLOCATION", "REPLENISHMENT"], period),
-      this.dashboardRepository.sumLedgerByType([account.id], ["EXPENSE"], period),
+      this.dashboardRepository.sumNetSpend([account.id], period),
       this.dashboardRepository.listRecentLedgerEntries(account.id, 10),
     ]);
 

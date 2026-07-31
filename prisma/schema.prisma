@@ -160,6 +160,9 @@ model User {
   issuedReplenishments    Replenishment[]     @relation("ReplenishmentIssuer")
   exceptionReplenishments Replenishment[]     @relation("ReplenishmentException")
   confirmedReplenishments Replenishment[]     @relation("ReplenishmentConfirmer")
+  requestedReplenishmentRequests ReplenishmentRequest[] @relation("ReplenishmentRequestRequester")
+  decidedReplenishmentRequests   ReplenishmentRequest[] @relation("ReplenishmentRequestDecider")
+  exceptionReplenishmentRequests ReplenishmentRequest[] @relation("ReplenishmentRequestException")
 
   @@map("users")
 }
@@ -272,6 +275,7 @@ model PettyCashAccount {
   archives        MonthlyArchive[]
   monthlyClosings MonthlyClosing[]
   replenishments  Replenishment[]
+  replenishmentRequests ReplenishmentRequest[]
 
   @@map("petty_cash_accounts")
 }
@@ -316,6 +320,9 @@ model CashAllocation {
   confirmedDate   DateTime? @map("confirmed_date") @db.Date
   confirmedBy     String?   @map("confirmed_by") @db.Uuid
   confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  // Mandatory only when confirmedAmount != amount — mirrors MonthlyClosing's variance
+  // remarks (month-close.rules.ts's remarksRequired), reused directly for this check.
+  confirmedVarianceRemarks String? @map("confirmed_variance_remarks")
   idempotencyKey  String    @unique @map("idempotency_key")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
@@ -324,6 +331,18 @@ model CashAllocation {
   confirmer User?            @relation("AllocationConfirmer", fields: [confirmedBy], references: [id])
 
   @@map("cash_allocations")
+}
+
+// ADR-0010: a genuine 3-state, cross-role workflow (unit requests, Finance
+// approves/rejects) — an enum is the right precedent here, same as
+// MonthlyClosingStatus, rather than the nullable-timestamp-pair pattern used by
+// CashAllocation/Replenishment's own create-then-confirm step.
+enum ReplenishmentRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+
+  @@map("replenishment_request_status")
 }
 
 enum MonthlyClosingStatus {
@@ -364,10 +383,33 @@ model MonthlyClosing {
   closer   User?            @relation("ClosingClosedBy", fields: [closedBy], references: [id])
   reopener User?            @relation("ClosingReopenedBy", fields: [reopenedBy], references: [id])
 
+  denominations CashCountDenomination[]
+
   // §14.3 "One monthly closing per account/month" — enforced here, not just in the
   // service's upsert logic.
   @@unique([accountId, periodYear, periodMonth], map: "uq_closing_account_period")
   @@map("monthly_closings")
+}
+
+// A denomination-by-denomination cash count breakdown for a MonthlyClosing —
+// physical_cash_count on the parent is now *derived* from these rows (Σ denomination ×
+// count), not separately typed, so there's no total left to fake independently of what
+// was actually counted. A closing with zero rows here is a legacy/pre-feature record
+// that only ever had a single typed total (never backfilled — the UI branches on this
+// being empty to keep displaying those exactly as before). onDelete: Restrict mirrors
+// ExpenseLine's relation to ExpenseVoucher — nothing in this codebase hard-deletes a
+// MonthlyClosing either. The allowed denomination values themselves are validated in
+// packages/contracts, not a DB CHECK, so a future note/coin change is a one-place edit.
+model CashCountDenomination {
+  id           String @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  closingId    String @map("closing_id") @db.Uuid
+  denomination Int
+  count        Int
+
+  closing MonthlyClosing @relation(fields: [closingId], references: [id], onDelete: Restrict)
+
+  @@unique([closingId, denomination], map: "uq_cash_count_denomination")
+  @@map("cash_count_denominations")
 }
 
 // FR-REP-001..007. Mirrors CashAllocation's create-then-confirm shape deliberately
@@ -393,19 +435,78 @@ model Replenishment {
   confirmedDate   DateTime? @map("confirmed_date") @db.Date
   confirmedBy     String?   @map("confirmed_by") @db.Uuid
   confirmedAt     DateTime? @map("confirmed_at") @db.Timestamptz(6)
+  // Mandatory only when confirmedAmount != amount — mirrors MonthlyClosing's variance
+  // remarks (month-close.rules.ts's remarksRequired), reused directly for this check.
+  confirmedVarianceRemarks String? @map("confirmed_variance_remarks")
   idempotencyKey  String    @unique @map("idempotency_key")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  // ADR-0010: set when this row was created via ReplenishmentRequest approval/override,
+  // rather than the old direct-create path (removed). Nullable so rows created before
+  // this migration stay valid with no backfill required.
+  requestId       String?   @unique @map("request_id") @db.Uuid
 
-  account        PettyCashAccount @relation(fields: [accountId], references: [id])
-  issuer         User             @relation("ReplenishmentIssuer", fields: [issuedBy], references: [id])
-  exceptionActor User?            @relation("ReplenishmentException", fields: [exceptionBy], references: [id])
-  confirmer      User?            @relation("ReplenishmentConfirmer", fields: [confirmedBy], references: [id])
+  account        PettyCashAccount      @relation(fields: [accountId], references: [id])
+  issuer         User                  @relation("ReplenishmentIssuer", fields: [issuedBy], references: [id])
+  exceptionActor User?                 @relation("ReplenishmentException", fields: [exceptionBy], references: [id])
+  confirmer      User?                 @relation("ReplenishmentConfirmer", fields: [confirmedBy], references: [id])
+  request        ReplenishmentRequest? @relation(fields: [requestId], references: [id])
 
   // FR-REP-006: prevent duplicate posting of the same reference. A plain Prisma
   // @@unique is sufficient — Postgres treats every NULL as distinct, so accounts with
   // no reference_no supplied are never falsely blocked from a second replenishment.
   @@unique([accountId, referenceNo], map: "uq_replenishment_account_reference")
   @@map("replenishments")
+}
+
+// ADR-0010: BR-013's three-month hold is now enforced at request time (a non-compliant
+// unit cannot submit a request at all — see replenishment-requests.service.ts), and
+// creating the real Replenishment row only happens on Finance approval (or the
+// Finance-initiated override path, which creates+approves atomically). This table is
+// deliberately separate from Replenishment rather than adding a status enum onto it
+// directly — Replenishment's own shape (used by the untouched confirm/ledger-posting
+// flow, ADR-0009) stays byte-for-byte what it already was, plus one nullable FK back to
+// here.
+model ReplenishmentRequest {
+  id          String                     @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  accountId   String                     @map("account_id") @db.Uuid
+  amount      Decimal                    @db.Decimal(14, 2)
+  reason      String
+  status      ReplenishmentRequestStatus @default(PENDING)
+  requestedBy String                     @map("requested_by") @db.Uuid
+  requestedAt DateTime                   @default(now()) @map("requested_at") @db.Timestamptz(6)
+
+  // BR-013 snapshot at submission (or override-submission) time. isCompliant is always
+  // true for a normal PENDING request — a non-compliant submission is rejected outright
+  // and never persisted. The exception trio is only ever populated by the override path.
+  isCompliant     Boolean   @map("is_compliant")
+  exceptionReason String?   @map("exception_reason")
+  exceptionBy     String?   @map("exception_by") @db.Uuid
+  exceptionAt     DateTime? @map("exception_at") @db.Timestamptz(6)
+
+  decidedBy       String?   @map("decided_by") @db.Uuid
+  decidedAt       DateTime? @map("decided_at") @db.Timestamptz(6)
+  rejectionReason String?   @map("rejection_reason")
+
+  // Finance-supplied at approve/override time (moved from create-time in the old
+  // direct-create flow this replaces).
+  issueDate   DateTime? @map("issue_date") @db.Date
+  referenceNo String?   @map("reference_no")
+  paymentMode String?   @map("payment_mode")
+  remarks     String?
+
+  idempotencyKey String   @unique @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  account        PettyCashAccount @relation(fields: [accountId], references: [id])
+  requester      User             @relation("ReplenishmentRequestRequester", fields: [requestedBy], references: [id])
+  decider        User?            @relation("ReplenishmentRequestDecider", fields: [decidedBy], references: [id])
+  exceptionActor User?            @relation("ReplenishmentRequestException", fields: [exceptionBy], references: [id])
+  // Non-owning side — the FK lives on Replenishment.requestId (the one new column that
+  // model gains). At most one Replenishment can ever reference a given request, since
+  // approve()/submitOverride() are each only reachable once per request (status guard).
+  replenishment  Replenishment?
+
+  @@map("replenishment_requests")
 }
 
 model AuditLog {

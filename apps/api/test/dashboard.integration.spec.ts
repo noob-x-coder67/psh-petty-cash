@@ -1,5 +1,6 @@
 import { type INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { Prisma } from "@prisma/client";
 import cookieParser from "cookie-parser";
 import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -66,14 +67,14 @@ describe("GET /dashboard/finance (dashboard.view_all)", () => {
 
 describe("GET /dashboard/unit/:id (dashboard.view_own_unit)", () => {
   it("a unit-scoped user can view their own unit's dashboard", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     const res = await request(app.getHttpServer())
       .get(`/dashboard/unit/${unit.id}`)
       .set("Cookie", cookies)
       .expect(200);
 
-    expect(res.body.unit.code).toBe("PSH-SOH");
+    expect(res.body.unit.code).toBe("PSH-CCS");
     expect(typeof res.body.balance).toBe("string");
     expect(res.body.period.expectedCash).toBe(res.body.balance);
   });
@@ -95,5 +96,58 @@ describe("GET /dashboard/unit/:id (dashboard.view_own_unit)", () => {
       .set("Cookie", cookies)
       .expect(200);
     expect(res.body.unit.code).toBe("PSH-SUK");
+  });
+});
+
+// "Spent (this period)" (period.spent / kpis.spending) must net out reversed vouchers —
+// a bug found in live testing: it used to sum every EXPENSE ledger entry regardless of
+// whether the voucher behind it was later reversed, since a reversal posts a *separate*
+// REVERSAL entry rather than altering the original. Uses PSH-SUK, not PSH-CCS (see
+// docs/known-issues.md on PSH-CCS fixture reuse), and today's date so both the EXPENSE
+// and REVERSAL entries land in the same accounting period, isolating the netting bug
+// from the cross-period-boundary case (which is a different, correct behavior).
+describe("GET /dashboard/unit/:id — spent (this period) nets out reversed vouchers", () => {
+  it("a reversed voucher's amount drops back out of period.spent", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
+    const financeManagerCookies = await loginAs("financemanager@psh.local");
+
+    const before = await request(app.getHttpServer())
+      .get(`/dashboard/unit/${unit.id}`)
+      .set("Cookie", financeManagerCookies)
+      .expect(200);
+    const baselineSpent = new Prisma.Decimal(before.body.period.spent);
+
+    const sukkurCookies = await loginAs("user.sukkur@psh.local");
+    const createRes = await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", sukkurCookies)
+      .send({
+        unitId: unit.id,
+        expenseDate: "2026-07-30",
+        vendorName: "Net-Spend Test Vendor",
+        justification: "dashboard.integration.spec.ts net-spend fixture",
+        billTotal: "60.00",
+        hasBill: true,
+        lines: [{ description: "Supplies", category: "BUILDING", amount: "60.00" }],
+      })
+      .expect(201);
+
+    const afterExpense = await request(app.getHttpServer())
+      .get(`/dashboard/unit/${unit.id}`)
+      .set("Cookie", financeManagerCookies)
+      .expect(200);
+    expect(new Prisma.Decimal(afterExpense.body.period.spent).toFixed(2)).toBe(baselineSpent.plus("60.00").toFixed(2));
+
+    await request(app.getHttpServer())
+      .post(`/expenses/${createRes.body.voucher.id}/reverse`)
+      .set("Cookie", financeManagerCookies)
+      .send({ reason: "dashboard.integration.spec.ts net-spend fixture — reversing" })
+      .expect(201);
+
+    const afterReversal = await request(app.getHttpServer())
+      .get(`/dashboard/unit/${unit.id}`)
+      .set("Cookie", financeManagerCookies)
+      .expect(200);
+    expect(new Prisma.Decimal(afterReversal.body.period.spent).toFixed(2)).toBe(baselineSpent.toFixed(2));
   });
 });

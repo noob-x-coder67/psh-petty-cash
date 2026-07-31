@@ -90,7 +90,7 @@ describe("GET /reports/:reportKey — auth, validation and unit scope", () => {
       .set("Cookie", cookies)
       .expect(200);
     expect(res.body.rows).toHaveLength(1);
-    expect(res.body.rows[0].unitCode).toBe("PSH-SOH");
+    expect(res.body.rows[0].unitCode).toBe("PSH-CCS");
   });
 
   it("a unit-scoped user explicitly requesting a foreign unit gets zero rows, not 403 or expanded access", async () => {
@@ -239,7 +239,7 @@ describe("RPT-03/04/06 reconcile against a direct query for one seeded unit-mont
   }
 
   it("RPT-03's total line amount matches a direct SUM(expense_lines.amount) for the same unit-month", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const { dateFrom, dateTo } = await pickMonthWithData(account.id);
     const monthEndExclusive = new Date(new Date(`${dateTo}T00:00:00.000Z`).getTime() + 86_400_000);
@@ -268,7 +268,7 @@ describe("RPT-03/04/06 reconcile against a direct query for one seeded unit-mont
   });
 
   it("RPT-04's grand total matches the same direct SUM for the same unit-month", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const { dateFrom, dateTo } = await pickMonthWithData(account.id);
     const monthEndExclusive = new Date(new Date(`${dateTo}T00:00:00.000Z`).getTime() + 86_400_000);
@@ -300,7 +300,7 @@ describe("RPT-03/04/06 reconcile against a direct query for one seeded unit-mont
   });
 
   it("RPT-06's voucher counts match a direct count for the same unit-month", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const { dateFrom, dateTo } = await pickMonthWithData(account.id);
     const monthEndExclusive = new Date(new Date(`${dateTo}T00:00:00.000Z`).getTime() + 86_400_000);

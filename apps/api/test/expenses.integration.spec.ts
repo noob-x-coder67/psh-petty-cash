@@ -10,7 +10,7 @@ import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/common/prisma/prisma.service";
 
 // Assumes `pnpm db:migrate` and `pnpm db:seed` have already been run against
-// DATABASE_URL. Uses PSH-SOH (already has an account from Phase 2's tests) rather than
+// DATABASE_URL. Uses PSH-CCS (already has an account from Phase 2's tests) rather than
 // a fresh unit — no seeded demo user is scoped to a unit without prior transaction
 // history, so every assertion reads the *current* balance/state first and checks
 // deltas, same convention as the Phase 2 tests.
@@ -65,7 +65,7 @@ function baseVoucherBody(unitId: string, overrides: Record<string, unknown> = {}
 
 describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", () => {
   it("rejects a category outside BUILDING/VEHICLE/OTHER at the schema layer", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
       .post("/expenses")
@@ -79,7 +79,7 @@ describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", (
   });
 
   it("rejects OTHER category without an explanation", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
       .post("/expenses")
@@ -93,7 +93,7 @@ describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", (
   });
 
   it("accepts OTHER category with a real explanation", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
       .post("/expenses")
@@ -111,7 +111,7 @@ describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", (
 
 describe("total-equality (BR-005), enforced twice", () => {
   it("rejects a mismatched line/bill total at the service layer", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
       .post("/expenses")
@@ -126,7 +126,7 @@ describe("total-equality (BR-005), enforced twice", () => {
   });
 
   it("rejects a mismatched total at the database layer, bypassing the service entirely", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const user = await prisma.user.findUniqueOrThrow({ where: { email: "user.sohawa@psh.local" } });
 
@@ -161,16 +161,16 @@ describe("total-equality (BR-005), enforced twice", () => {
 
 describe("negative balance (BR-011) — allowed, never blocked", () => {
   it("saves a voucher that drives the balance negative and reports balanceWarning", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const cookies = await loginAs("user.sohawa@psh.local");
 
-    // PSH-SOH is a shared fixture account reused by many tests against one persistent
+    // PSH-CCS is a shared fixture account reused by many tests against one persistent
     // dev DB, and this test itself drives the balance further negative every time it
     // runs. An earlier version of this fixture used cachedBalance.abs() + 500 as the
     // bill amount, which — applied to an already-negative balance, repeatedly, run
     // after run across a whole session — compounds by roughly 2x every run and
-    // eventually overflows NUMERIC(14,2) (confirmed: PSH-SOH reached -5.26e11 and the
+    // eventually overflows NUMERIC(14,2) (confirmed: PSH-CCS reached -5.26e11 and the
     // next abs()-derived bill amount exceeded the column's 10^12 limit). The actual
     // intent only needs "a bill large enough that posting it leaves the balance
     // negative" — if the balance is already negative, any small positive amount
@@ -233,7 +233,7 @@ describe("20-way concurrent voucher creation (Phase 3 exit gate)", () => {
 
 describe("privileged edit (BR-009, BR-010, FR-EXP-015/016)", () => {
   it("a Centre user gets 403 attempting to edit a saved voucher", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     const createRes = await request(app.getHttpServer())
       .post("/expenses")
@@ -249,7 +249,7 @@ describe("privileged edit (BR-009, BR-010, FR-EXP-015/016)", () => {
   });
 
   it("Finance Manager can edit a non-financial field with a mandatory reason, audited", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const sohawaCookies = await loginAs("user.sohawa@psh.local");
     const createRes = await request(app.getHttpServer())
       .post("/expenses")
@@ -276,7 +276,7 @@ describe("privileged edit (BR-009, BR-010, FR-EXP-015/016)", () => {
   });
 
   it("rejects editing an already-reversed voucher", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const sohawaCookies = await loginAs("user.sohawa@psh.local");
     const createRes = await request(app.getHttpServer())
       .post("/expenses")
@@ -301,7 +301,7 @@ describe("privileged edit (BR-009, BR-010, FR-EXP-015/016)", () => {
 
 describe("reversal (BR-020, FR-EXP-017) — no hard deletion, auditable compensating entry", () => {
   it("reverses a voucher: original marked REVERSED, balance restored, audited", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const before = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const sohawaCookies = await loginAs("user.sohawa@psh.local");
 
@@ -346,7 +346,7 @@ describe("reversal (BR-020, FR-EXP-017) — no hard deletion, auditable compensa
 
 describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
   it("global search matches vendor name, voucher number, or justification", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     const marker = `Zynthex-${Date.now()}`;
 
@@ -368,7 +368,7 @@ describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
   });
 
   it("checked filter returns only Checked (or only Unchecked) vouchers", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const sohawaCookies = await loginAs("user.sohawa@psh.local");
     const marker = `CheckFilter-${Date.now()}`;
 
@@ -402,7 +402,7 @@ describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
   });
 
   it("category filter returns only vouchers with a matching line category", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     const marker = `CategoryFilter-${Date.now()}`;
 
@@ -433,7 +433,7 @@ describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
   });
 
   it("date range filter excludes vouchers outside the range", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     const marker = `DateFilter-${Date.now()}`;
 
@@ -460,7 +460,7 @@ describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
 });
 
 describe("closed-period enforcement (assertPeriodNotClosed, FR-CLS territory)", () => {
-  // PSH-SUK, not PSH-SOH/PSH-BWL — those two already carry month-close.integration.spec.ts's
+  // PSH-SUK, not PSH-CCS/PSH-BHW — those two already carry month-close.integration.spec.ts's
   // own close/reopen lifecycle fixture. A dedicated MAX(periodYear for this account) + 1
   // period is genuine, permanent isolation (same reasoning as month-close.integration.spec.ts's
   // own TEST_YEAR) — never colliding with any period this account's monthly_closings has ever
@@ -477,24 +477,32 @@ describe("closed-period enforcement (assertPeriodNotClosed, FR-CLS territory)", 
     });
     closedYear = (maxYear._max.periodYear ?? 2299) + 1;
 
-    const cookies = await loginAs("financemanager@psh.local");
-    const before = await request(app.getHttpServer())
-      .get(`/monthly-close/${unit.id}/${closedYear}/${closedMonth}`)
-      .set("Cookie", cookies)
-      .expect(200);
-    const cashCount = await request(app.getHttpServer())
+    // Recording (Finance Officer) and closing (Finance Manager) are separate roles per
+    // ADR-0007 — Finance Manager/Super Admin no longer hold cash_count.enter at all, and
+    // closing itself no longer needs a recorded count, but a count is still recorded
+    // here anyway just to exercise the normal path this fixture originally modeled.
+    const financeOfficerCookies = await loginAs("financeofficer@psh.local");
+    // Just needs any valid closed month as a precondition for the tests below — not an
+    // exact balance match (PSH-SUK is a heavily shared fixture; see
+    // month-close.integration.spec.ts's own note on why an arbitrary count + unconditional
+    // remarks is used instead of trying to echo the live expected balance back exactly).
+    await request(app.getHttpServer())
       .post("/monthly-close")
-      .set("Cookie", cookies)
+      .set("Cookie", financeOfficerCookies)
       .send({
         unitId: unit.id,
         periodYear: closedYear,
         periodMonth: closedMonth,
-        physicalCashCount: before.body.expectedBalance,
+        denominations: [{ denomination: 5000, count: 1 }, { denomination: 1000, count: 0 }, { denomination: 500, count: 0 }, { denomination: 100, count: 0 }, { denomination: 50, count: 0 }, { denomination: 20, count: 0 }, { denomination: 10, count: 0 }],
+        remarks: "closed-period fixture setup — count not expected to match live balance",
       })
       .expect(201);
+
+    const financeManagerCookies = await loginAs("financemanager@psh.local");
     await request(app.getHttpServer())
-      .post(`/monthly-close/${cashCount.body.id}/close`)
-      .set("Cookie", cookies)
+      .post("/monthly-close/close")
+      .set("Cookie", financeManagerCookies)
+      .send({ unitId: unit.id, periodYear: closedYear, periodMonth: closedMonth })
       .expect(201);
   });
 

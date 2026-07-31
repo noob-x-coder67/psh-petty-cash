@@ -13,15 +13,15 @@ export const UNITS: Array<{
   pettyCashEnabled: boolean;
 }> = [
   { code: "PSH-ISB", name: "Pakistan Sweet Home Islamabad", type: "CENTER", city: "Islamabad", pettyCashEnabled: false },
-  { code: "PSH-SOH", name: "Pakistan Sweet Home Cadet College Sohawa", type: "CENTER", city: "Sohawa", pettyCashEnabled: true },
+  { code: "PSH-CCS", name: "Pakistan Sweet Home Cadet College Sohawa", type: "CENTER", city: "Sohawa", pettyCashEnabled: true },
   { code: "PSH-SUK", name: "Pakistan Sweet Home Sukkur", type: "CENTER", city: "Sukkur", pettyCashEnabled: true },
-  { code: "PSH-BWL", name: "Pakistan Sweet Home Bhalwal", type: "CENTER", city: "Bhalwal", pettyCashEnabled: true },
-  { code: "PSH-COE", name: "Pakistan Sweet Home Center of Excellence, Rehara, Rawalakot, AJK", type: "CENTER", city: "Rawalakot", pettyCashEnabled: true },
-  { code: "FTZ-RAJA", name: "Fatima Tuz Zahra Dastarkhawan - Raja Bazaar, Rawalpindi", type: "PROJECT_LOCATION", city: "Rawalpindi", pettyCashEnabled: true },
-  { code: "FTZ-LQB", name: "Fatima Tuz Zahra Dastarkhawan - Liaquat Bagh, Rawalpindi", type: "PROJECT_LOCATION", city: "Rawalpindi", pettyCashEnabled: true },
-  { code: "REHAB-CHK", name: "Pakistan Sweet Home Rehabilitation Center - Chakri, Rawalpindi", type: "PROJECT_LOCATION", city: "Rawalpindi", pettyCashEnabled: true },
-  { code: "REHAB-H9", name: "Pakistan Sweet Home Rehabilitation Center - H-9 Islamabad", type: "PROJECT_LOCATION", city: "Islamabad", pettyCashEnabled: true },
-  { code: "SAFAR-AKH", name: "Pakistan Sweet Home Free Burial Service (Safar-e-Akhrat)", type: "SERVICE", city: null, pettyCashEnabled: true },
+  { code: "PSH-BHW", name: "Pakistan Sweet Home Bhalwal", type: "CENTER", city: "Bhalwal", pettyCashEnabled: true },
+  { code: "PSH-COE", name: "Pakistan Sweet Home Center of Excellence", type: "CENTER", city: "Rehara, Rawalakot, AJK", pettyCashEnabled: true },
+  { code: "FTZ-DST-DHQ", name: "Fatima Tuz Zahra Dastarkhawan", type: "PROJECT_LOCATION", city: "DHQ Raja Bazar, Rawalpindi", pettyCashEnabled: true },
+  { code: "FTZ-DST-MCR", name: "Fatima Tuz Zahra Dastarkhawan", type: "PROJECT_LOCATION", city: "MCR, Rawalpindi", pettyCashEnabled: true },
+  { code: "PSH-REHAB-CHK", name: "Pakistan Sweet Home Rehabilitation Center", type: "PROJECT_LOCATION", city: "Chakri", pettyCashEnabled: true },
+  { code: "PSH-REHAB-H9", name: "Pakistan Sweet Home Rehabilitation Center", type: "PROJECT_LOCATION", city: "H-9, Islamabad", pettyCashEnabled: true },
+  { code: "SAFAR-AKH", name: "Pakistan Sweet Home Free Burial Service", type: "SERVICE", city: "Rakh Dhamyal", pettyCashEnabled: true },
 ];
 
 export const ROLES: Array<{ key: RoleKey; name: string }> = [
@@ -44,6 +44,8 @@ export const PERMISSIONS: Array<{ key: string; description: string }> = [
   { key: "attachment.upload", description: "Upload a bill attachment" },
   { key: "allocation.record", description: "Record allocation" },
   { key: "allocation.confirm_receipt", description: "Confirm allocation receipt" },
+  { key: "replenishment.request", description: "Submit replenishment request" },
+  { key: "replenishment.approve", description: "Approve/reject replenishment request" },
   { key: "cash_count.enter", description: "Enter physical cash count" },
   { key: "month.close", description: "Close month" },
   { key: "compliance.override_three_month_hold", description: "Override three-month hold" },
@@ -71,8 +73,27 @@ export const ROLE_PERMISSIONS: Record<string, RoleKey[]> = {
   "receipt.check": ["FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],
   "attachment.upload": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],
   "allocation.record": ["FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],
-  "allocation.confirm_receipt": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_MANAGER", "SUPER_ADMIN"],
-  "cash_count.enter": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER", "FINANCE_MANAGER", "SUPER_ADMIN"],
+  // ADR-0008: confirming receipt is exclusively the receiving unit's job. Finance
+  // Manager/Super Admin already hold allocation.record — letting them also confirm
+  // receipt would let the same actor both send and confirm-receive cash, defeating
+  // the point of a confirmation step. Applies identically to replenishment
+  // confirmation, which shares this key (replenishments.controller.ts).
+  "allocation.confirm_receipt": ["UNIT_USER", "UNIT_INCHARGE"],
+  // ADR-0010: the unit's own single assigned user submits a replenishment request
+  // (amount + reason only); BR-013's three-month hold blocks submission outright, no
+  // bypass reachable here.
+  "replenishment.request": ["UNIT_USER", "UNIT_INCHARGE"],
+  // ADR-0010: approving/rejecting is a heavier, one-shot financial commitment (it
+  // creates the real ledger-eligible Replenishment row) — scoped to the same two roles
+  // that already hold compliance.override_three_month_hold, not to allocation.record's
+  // wider set. Finance Officer loses the ability to originate a replenishment at all
+  // (previously held via allocation.record); flagged in ADR-0010 as a deliberate,
+  // reviewable narrowing, not an oversight.
+  "replenishment.approve": ["FINANCE_MANAGER", "SUPER_ADMIN"],
+  // ADR-0007: Finance Manager/Super Admin close months administratively and no longer
+  // enter or review cash counts at all — that stays with the center (and Finance
+  // Officer, who can enter on the center's behalf) exclusively.
+  "cash_count.enter": ["UNIT_USER", "UNIT_INCHARGE", "FINANCE_OFFICER"],
   "month.close": ["FINANCE_MANAGER", "SUPER_ADMIN"],
   "compliance.override_three_month_hold": ["FINANCE_MANAGER", "SUPER_ADMIN"],
   "category.manage": ["FINANCE_MANAGER", "SUPER_ADMIN"],
@@ -104,8 +125,14 @@ export const DEMO_USERS: Array<{
   { email: "superadmin@psh.local", username: "superadmin", fullName: "Super Admin", role: "SUPER_ADMIN", unitCodes: [] },
   { email: "financemanager@psh.local", username: "financemanager", fullName: "Finance Manager", role: "FINANCE_MANAGER", unitCodes: [] },
   { email: "financeofficer@psh.local", username: "financeofficer", fullName: "Finance Officer", role: "FINANCE_OFFICER", unitCodes: [] },
-  { email: "user.sohawa@psh.local", username: "user.sohawa", fullName: "Center User - Sohawa", role: "UNIT_USER", unitCodes: ["PSH-SOH"] },
+  { email: "user.sohawa@psh.local", username: "user.sohawa", fullName: "Center User - Sohawa", role: "UNIT_USER", unitCodes: ["PSH-CCS"] },
   { email: "user.sukkur@psh.local", username: "user.sukkur", fullName: "Center User - Sukkur", role: "UNIT_USER", unitCodes: ["PSH-SUK"] },
-  { email: "user.rehab@psh.local", username: "user.rehab", fullName: "Project User - Rehabilitation", role: "UNIT_USER", unitCodes: ["REHAB-CHK", "REHAB-H9"] },
+  { email: "user.bhalwal@psh.local", username: "user.bhalwal", fullName: "Center User - Bhalwal", role: "UNIT_USER", unitCodes: ["PSH-BHW"] },
+  { email: "user.coe@psh.local", username: "user.coe", fullName: "Center User - Rawalakot (COE)", role: "UNIT_USER", unitCodes: ["PSH-COE"] },
+  { email: "user.rehabchakri@psh.local", username: "user.rehabchakri", fullName: "Project User - Chakri", role: "UNIT_USER", unitCodes: ["PSH-REHAB-CHK"] },
+  { email: "user.rehabh9@psh.local", username: "user.rehabh9", fullName: "Project User - H-9 Islamabad", role: "UNIT_USER", unitCodes: ["PSH-REHAB-H9"] },
+  { email: "user.ftzdhq@psh.local", username: "user.ftzdhq", fullName: "Project User - DHQ Raja Bazar", role: "UNIT_USER", unitCodes: ["FTZ-DST-DHQ"] },
+  { email: "user.ftzmcr@psh.local", username: "user.ftzmcr", fullName: "Project User - MCR", role: "UNIT_USER", unitCodes: ["FTZ-DST-MCR"] },
+  { email: "user.safar@psh.local", username: "user.safar", fullName: "Service User - Rakh Dhamyal", role: "UNIT_USER", unitCodes: ["SAFAR-AKH"] },
   { email: "auditor@psh.local", username: "auditor", fullName: "Auditor (Read Only)", role: "AUDITOR", unitCodes: [] },
 ];

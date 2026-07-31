@@ -1,6 +1,6 @@
 "use client";
 
-import { Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, Label } from "@psh/ui";
+import { Alert, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Money } from "@psh/ui";
 import { useState } from "react";
 import { useAllocation, usePendingAllocations } from "./use-allocation";
 import { usePendingReplenishments, useReplenishment } from "./use-replenishment";
@@ -29,7 +29,6 @@ export function PendingConfirmations({ unitId, canConfirm }: { unitId: string; c
   const { data: pendingReplenishments } = usePendingReplenishments(unitId, canConfirm);
 
   const [confirming, setConfirming] = useState<PendingRow | null>(null);
-  const [confirmedAmount, setConfirmedAmount] = useState("");
   const [confirmedDate, setConfirmedDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   if (!canConfirm) return null;
@@ -61,7 +60,6 @@ export function PendingConfirmations({ unitId, canConfirm }: { unitId: string; c
 
   function startConfirming(row: PendingRow): void {
     setConfirming(row);
-    setConfirmedAmount(row.amount);
     setConfirmedDate(new Date().toISOString().slice(0, 10));
   }
 
@@ -69,18 +67,15 @@ export function PendingConfirmations({ unitId, canConfirm }: { unitId: string; c
     setConfirming(null);
   }
 
+  // ADR-0009: confirmation is a locked, exact-match attestation against the original
+  // allocated/replenished amount — cash is handed over hand-to-hand, so there's no
+  // amount to type in and no variance to reconcile here.
   function submitConfirm(): void {
     if (!confirming) return;
     if (confirming.kind === "allocation") {
-      confirmAllocation(
-        { allocationId: confirming.id, confirmedAmount, confirmedDate },
-        { onSuccess: () => setConfirming(null) },
-      );
+      confirmAllocation({ allocationId: confirming.id, confirmedDate }, { onSuccess: () => setConfirming(null) });
     } else {
-      confirmReplenishment(
-        { replenishmentId: confirming.id, confirmedAmount, confirmedDate },
-        { onSuccess: () => setConfirming(null) },
-      );
+      confirmReplenishment({ replenishmentId: confirming.id, confirmedDate }, { onSuccess: () => setConfirming(null) });
     }
   }
 
@@ -117,13 +112,10 @@ export function PendingConfirmations({ unitId, canConfirm }: { unitId: string; c
               <div className="flex flex-col gap-3 rounded-card border border-border bg-surface-0 p-3">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={`confirm-amount-${row.id}`}>Confirmed Amount</Label>
-                    <Input
-                      id={`confirm-amount-${row.id}`}
-                      aria-label="Confirmed amount"
-                      value={confirmedAmount}
-                      onChange={(event) => setConfirmedAmount(event.target.value)}
-                    />
+                    <Label>Amount Received</Label>
+                    <p className="flex h-10 items-center text-sm font-medium text-ink">
+                      <Money value={row.amount} />
+                    </p>
                   </div>
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor={`confirm-date-${row.id}`}>Confirmed Date</Label>
@@ -140,17 +132,13 @@ export function PendingConfirmations({ unitId, canConfirm }: { unitId: string; c
                   <Button variant="secondary" size="sm" onClick={cancelConfirming} disabled={isConfirming}>
                     Cancel
                   </Button>
-                  <Button
-                    size="sm"
-                    onClick={submitConfirm}
-                    disabled={isConfirming || !confirmedAmount || !confirmedDate}
-                  >
+                  <Button size="sm" onClick={submitConfirm} disabled={isConfirming || !confirmedDate}>
                     {isConfirming ? "Confirming..." : "Confirm"}
                   </Button>
                 </div>
                 {confirmError ? (
                   <Alert variant="danger" title="Couldn't confirm receipt">
-                    {confirmError instanceof Error ? confirmError.message : "Please check the values above and try again."}
+                    {confirmError instanceof Error ? confirmError.message : "Please try again."}
                   </Alert>
                 ) : null}
               </div>

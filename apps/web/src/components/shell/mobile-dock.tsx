@@ -17,14 +17,17 @@ const DOCK_ITEMS = [
   { label: "More", href: "/my-unit", icon: Menu },
 ] as const;
 
-export function MobileDock() {
+export function MobileDock({ canCreateExpense }: { canCreateExpense: boolean }) {
   const pathname = usePathname();
+  // expense.create is only granted to Unit User/In-Charge (seed-data.ts) — hidden for
+  // everyone else rather than shown-and-rejected, same precedent as command-palette.tsx.
+  const items = canCreateExpense ? DOCK_ITEMS : DOCK_ITEMS.filter((item) => item.href !== "/expenses/new");
   return (
     <nav
       className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-border bg-surface-1 py-1.5 md:hidden"
       aria-label="Mobile navigation"
     >
-      {DOCK_ITEMS.map((item) => {
+      {items.map((item) => {
         const active = pathname === item.href;
         const isCenter = item.label === "New";
         const Icon = item.icon;

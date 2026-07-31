@@ -55,11 +55,11 @@ beforeAll(async () => {
   // enough runs that collision became routine rather than rare. monthly_closings has
   // DELETE revoked from psh_app by design (a genuine financial-record immutability rule,
   // migration 20260727101836), so this can't be fixed by deleting old rows; instead
-  // RPT_BASE_YEAR (below) is computed strictly greater than any year FTZ-RAJA/REHAB-CHK's
+  // RPT_BASE_YEAR (below) is computed strictly greater than any year FTZ-DST-DHQ/PSH-REHAB-CHK's
   // monthly_closings has ever contained — permanent isolation without deleting anything.
   const [ftzRaja, rehabChk] = await Promise.all([
-    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "FTZ-RAJA" } }),
-    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "REHAB-CHK" } }),
+    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "FTZ-DST-DHQ" } }),
+    prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-REHAB-CHK" } }),
   ]);
   const [ftzRajaAccount, rehabChkAccount] = await Promise.all([
     prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: ftzRaja.id } }),
@@ -86,11 +86,11 @@ describe("RPT-02 Unit Ledger", () => {
       .set("Cookie", cookies)
       .expect(200);
     expect(res.body.rows.length).toBeGreaterThan(0);
-    expect(res.body.rows.every((row: { unitCode: string }) => row.unitCode === "PSH-SOH")).toBe(true);
+    expect(res.body.rows.every((row: { unitCode: string }) => row.unitCode === "PSH-CCS")).toBe(true);
   });
 
   it("the sum of signed amounts for one unit's ledger rows matches its cached balance change", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const cookies = await loginAs("financemanager@psh.local");
     const res = await request(app.getHttpServer())
@@ -127,7 +127,7 @@ describe("RPT-07 Negative Balance", () => {
   it("the open (endDate: null) streak unit codes exactly match the accounts currently negative", async () => {
     // A live comparison against ground truth, not a magic expected count — how many
     // accounts happen to be negative in this shared, never-reset test database drifts
-    // over time as other tests run (confirmed: PSH-SOH and PSH-SUK are both genuinely
+    // over time as other tests run (confirmed: PSH-CCS and PSH-SUK are both genuinely
     // negative right now, from unrelated earlier test activity, not a bug here). The
     // property this test actually needs to prove is "the report agrees with reality,"
     // which holds regardless of how many accounts that reality currently includes.
@@ -177,35 +177,46 @@ describe("RPT-08 Allocation and Replenishment", () => {
 
 // RPT-09/10 (Phase 7, deferred from Phase 6 per ADR-0003) — computed in beforeAll, not
 // randomized (see that comment for the full reasoning). Units are disjoint from
-// month-close's (PSH-BWL/PSH-SOH) and replenishments' (PSH-COE) own fixture units, so no
+// month-close's (PSH-BHW/PSH-CCS) and replenishments' (PSH-COE) own fixture units, so no
 // cross-file interference regardless of year value.
 let RPT_BASE_YEAR: number;
 
+// Just needs any valid closed month as a precondition for the RPT-09/10 tests below —
+// not an exact balance match (see month-close.integration.spec.ts's own note on why an
+// arbitrary count + unconditional remarks is used instead of trying to echo the live
+// expected balance back exactly). `closeCookies` is the caller's own session (Finance
+// Manager/Super Admin, per ADR-0007 the only roles that can close); recording always
+// goes through Finance Officer regardless, since ADR-0007 removed cash_count.enter from
+// Finance Manager/Super Admin entirely.
 async function recordAndCloseMonth(
   app: INestApplication,
   unitId: string,
   year: number,
   month: number,
-  cookies: string[],
+  closeCookies: string[],
 ): Promise<void> {
-  const before = await request(app.getHttpServer())
-    .get(`/monthly-close/${unitId}/${year}/${month}`)
-    .set("Cookie", cookies)
-    .expect(200);
-  const recorded = await request(app.getHttpServer())
+  const financeOfficerCookies = await loginAs("financeofficer@psh.local");
+  await request(app.getHttpServer())
     .post("/monthly-close")
-    .set("Cookie", cookies)
-    .send({ unitId, periodYear: year, periodMonth: month, physicalCashCount: before.body.expectedBalance })
+    .set("Cookie", financeOfficerCookies)
+    .send({
+      unitId,
+      periodYear: year,
+      periodMonth: month,
+      denominations: [{ denomination: 5000, count: 1 }, { denomination: 1000, count: 0 }, { denomination: 500, count: 0 }, { denomination: 100, count: 0 }, { denomination: 50, count: 0 }, { denomination: 20, count: 0 }, { denomination: 10, count: 0 }],
+      remarks: "RPT-09/10 fixture setup — count not expected to match live balance",
+    })
     .expect(201);
   await request(app.getHttpServer())
-    .post(`/monthly-close/${recorded.body.id}/close`)
-    .set("Cookie", cookies)
+    .post("/monthly-close/close")
+    .set("Cookie", closeCookies)
+    .send({ unitId, periodYear: year, periodMonth: month })
     .expect(201);
 }
 
 describe("RPT-09 Three-Month Compliance", () => {
   it("is eligible once all 3 preceding months are CLOSED, matching a direct monthly_closings query", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "FTZ-RAJA" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "FTZ-DST-DHQ" } });
     const cookies = await loginAs("financemanager@psh.local");
     // precedingThreeMonths(RPT_BASE_YEAR, 1) = Oct/Nov/Dec of RPT_BASE_YEAR - 1.
     const prevYear = RPT_BASE_YEAR - 1;
@@ -232,7 +243,7 @@ describe("RPT-09 Three-Month Compliance", () => {
   });
 
   it("is not eligible (MISSING months) for a target period nothing has ever touched", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "FTZ-RAJA" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "FTZ-DST-DHQ" } });
     const cookies = await loginAs("financemanager@psh.local");
     const freshYear = RPT_BASE_YEAR + 50;
 
@@ -256,7 +267,7 @@ describe("RPT-09 Three-Month Compliance", () => {
 
 describe("RPT-10 Cash Count and Variance", () => {
   it("reflects a closed month's recorded cash count, matching a direct monthly_closings query", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "REHAB-CHK" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-REHAB-CHK" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const cookies = await loginAs("financemanager@psh.local");
     const year = RPT_BASE_YEAR;
@@ -282,7 +293,7 @@ describe("RPT-10 Cash Count and Variance", () => {
   });
 
   it("still returns a row (status OPEN, null fields) for a period with no monthly_closings row at all", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "REHAB-CHK" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-REHAB-CHK" } });
     const cookies = await loginAs("financemanager@psh.local");
     const freshYear = RPT_BASE_YEAR + 60;
 
@@ -338,7 +349,7 @@ describe("RPT-13 User Activity", () => {
     // actually enter one, so the assertion no longer depends on that kind of accidental
     // cross-run state.
     const sohawaUser = await prisma.user.findUniqueOrThrow({ where: { email: "user.sohawa@psh.local" } });
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const sohawaCookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
       .post("/expenses")
@@ -422,7 +433,7 @@ describe("RPT-14 Audit Trail", () => {
   // gate) — a fixture Unit In-Charge is created directly so the unit-scoping guarantee
   // is still exercised through a real login, not just asserted against seed data.
   it("a Unit In-Charge only sees audit rows tied to their own unit", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const financeOfficer = await prisma.user.findUniqueOrThrow({ where: { email: "financeofficer@psh.local" } });
     const inchargeRole = await prisma.role.findUniqueOrThrow({ where: { key: "UNIT_INCHARGE" } });
     const fixtureUser = await prisma.user.upsert({

@@ -28,6 +28,8 @@ export default async function CashFlowPage({
       unit={selected}
       canOverrideHold={user.permissionKeys.includes("compliance.override_three_month_hold")}
       canConfirm={user.permissionKeys.includes("allocation.confirm_receipt")}
+      canRequestReplenishment={user.permissionKeys.includes("replenishment.request")}
+      canApproveReplenishment={user.permissionKeys.includes("replenishment.approve")}
     />
   );
 }

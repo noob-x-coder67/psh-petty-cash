@@ -19,7 +19,7 @@ export function useMonthlyClosing(unitId: string, period: Period) {
   });
 
   const recordCashCount = useMutation({
-    mutationFn: (input: { physicalCashCount: string; remarks?: string }) =>
+    mutationFn: (input: { denominations: Array<{ denomination: number; count: number }>; remarks?: string }) =>
       apiFetch<MonthlyClosing>("/monthly-close", {
         method: "POST",
         body: JSON.stringify({ unitId, periodYear: period.year, periodMonth: period.month, ...input }),
@@ -27,8 +27,14 @@ export function useMonthlyClosing(unitId: string, period: Period) {
     onSuccess: (data) => queryClient.setQueryData(queryKey, data),
   });
 
+  // ADR-0007: addressed by unit+period, not a row id — a period with no cash count ever
+  // recorded has no MonthlyClosing row yet, so there's no id to close by.
   const closeMonth = useMutation({
-    mutationFn: (id: string) => apiFetch<MonthlyClosing>(`/monthly-close/${id}/close`, { method: "POST" }),
+    mutationFn: () =>
+      apiFetch<MonthlyClosing>("/monthly-close/close", {
+        method: "POST",
+        body: JSON.stringify({ unitId, periodYear: period.year, periodMonth: period.month }),
+      }),
     onSuccess: (data) => queryClient.setQueryData(queryKey, data),
   });
 

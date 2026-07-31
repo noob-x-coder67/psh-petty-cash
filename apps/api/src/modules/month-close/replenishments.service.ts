@@ -1,12 +1,5 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
-import type {
-  ComplianceMonth,
-  ComplianceResponse,
-  ConfirmReplenishmentRequest,
-  CreateReplenishmentRequest,
-  Replenishment,
-} from "@psh/contracts";
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import type { ComplianceMonth, ComplianceResponse, ConfirmReplenishmentRequest, Replenishment } from "@psh/contracts";
 import { AuditLogRepository } from "../../common/audit/audit-log.repository";
 import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repository";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -15,17 +8,18 @@ import { AccountsRepository } from "../accounts/accounts.repository";
 import { currentKarachiPeriod } from "../dashboard/period.util";
 import { MonthCloseRepository } from "./month-close.repository";
 import { ReplenishmentsRepository, type ReplenishmentWithRelations } from "./replenishments.repository";
-import { evaluateThreeMonthCompliance, precedingThreeMonths } from "./replenishments.rules";
+import { evaluateThreeMonthCompliance } from "./replenishments.rules";
 
 // Long enough to comfortably show a year-boundary crossing (FR-CLS-009 / Phase 7's exit
 // gate), short enough that a unit with no history at all doesn't render 5 years of
 // "MISSING" tiles.
 const TIMELINE_MONTHS = 14;
 
-export interface CreateReplenishmentInput extends CreateReplenishmentRequest {
-  actor: AuthenticatedUser;
-}
-
+// ADR-0010: direct-create (createReplenishment) is gone — a Replenishment row is only
+// ever produced by ReplenishmentRequestsService's approve()/submitOverride(), via
+// ReplenishmentsRepository.create() (reused directly, not duplicated). This service now
+// only covers what didn't change: hand-to-hand confirm receipt (ADR-0009) and the
+// compliance timeline/forecast.
 @Injectable()
 export class ReplenishmentsService {
   constructor(
@@ -36,87 +30,6 @@ export class ReplenishmentsService {
     private readonly auditLogRepository: AuditLogRepository,
     private readonly prisma: PrismaService,
   ) {}
-
-  async createReplenishment(input: CreateReplenishmentInput): Promise<Replenishment> {
-    // FR-REP-006-style idempotent replay, same pattern as CashAllocation.
-    const existing = await this.replenishmentsRepository.findByIdempotencyKey(input.idempotencyKey);
-    if (existing) {
-      return this.toContractShape(existing);
-    }
-
-    const account = await this.accountsRepository.findByUnitId(input.unitId);
-    if (!account) {
-      throw new NotFoundException(`Unit ${input.unitId} has no petty-cash account`);
-    }
-
-    const issueDate = new Date(input.issueDate);
-    const targetYear = issueDate.getUTCFullYear();
-    const targetMonth = issueDate.getUTCMonth() + 1;
-    const statusByPeriod = await this.monthCloseRepository.findStatusesForPeriods(
-      account.id,
-      precedingThreeMonths(targetYear, targetMonth),
-    );
-    const compliance = evaluateThreeMonthCompliance(targetYear, targetMonth, statusByPeriod);
-
-    // FR-REP-003/004: hold unless compliant, or a Finance Manager/Super Admin records an
-    // exception. A Finance Officer who lacks the override permission is rejected even if
-    // they supply a reason — the reason alone isn't the authorization.
-    let exceptionReason: string | null = null;
-    if (!compliance.isCompliant) {
-      if (!input.actor.permissionKeys.includes("compliance.override_three_month_hold")) {
-        throw new ConflictException(
-          "Hold - Three-Month Closing Incomplete: the preceding three monthly closings are not all CLOSED",
-        );
-      }
-      if (!input.exceptionReason?.trim()) {
-        throw new BadRequestException("An exception reason is required to override the three-month hold");
-      }
-      exceptionReason = input.exceptionReason.trim();
-    }
-
-    let created: ReplenishmentWithRelations;
-    try {
-      created = await this.prisma.$transaction(async (tx) => {
-        const result = await this.replenishmentsRepository.create(
-          {
-            accountId: account.id,
-            amount: new Prisma.Decimal(input.amount),
-            issueDate,
-            referenceNo: input.referenceNo ?? null,
-            paymentMode: input.paymentMode ?? null,
-            remarks: input.remarks ?? null,
-            isCompliant: compliance.isCompliant,
-            exceptionReason,
-            exceptionBy: exceptionReason ? input.actor.id : null,
-            exceptionAt: exceptionReason ? new Date() : null,
-            issuedBy: input.actor.id,
-            idempotencyKey: input.idempotencyKey,
-          },
-          tx,
-        );
-        await this.auditLogRepository.record(tx, {
-          actorId: input.actor.id,
-          actorRole: input.actor.roleKeys[0] ?? null,
-          action: "REPLENISHMENT_CREATE",
-          entityType: "replenishments",
-          entityId: result.id,
-          unitId: account.unitId,
-          reason: exceptionReason,
-          after: result,
-        });
-        return result;
-      });
-    } catch (error) {
-      // uq_replenishment_account_reference (FR-REP-006) — a friendlier 409 than a raw
-      // constraint-violation 500.
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-        throw new ConflictException("This reference number has already been used for a replenishment on this account");
-      }
-      throw error;
-    }
-
-    return this.toContractShape(created);
-  }
 
   async listPending(unitId: string, actor: AuthenticatedUser): Promise<Replenishment[]> {
     this.assertUnitScope(unitId, actor);
@@ -142,21 +55,30 @@ export class ReplenishmentsService {
     }
     this.assertUnitScope(replenishment.account.unitId, actor);
 
-    const confirmedAmount = new Prisma.Decimal(input.confirmedAmount);
     const confirmedDate = new Date(input.confirmedDate);
 
+    // ADR-0009: confirmation is a locked, exact-match attestation against the original
+    // replenished amount — cash is handed over hand-to-hand, so the amount is never
+    // client-supplied and never varies. No variance check, no remarks.
     const confirmed = await this.prisma.$transaction(async (tx) => {
       await this.ledgerPostingRepository.postEntryWithTx(tx, {
         accountId: replenishment.accountId,
         entryType: "REPLENISHMENT",
         direction: 1,
-        amount: confirmedAmount,
+        amount: replenishment.amount,
         effectiveDate: confirmedDate,
         sourceTable: "replenishments",
         sourceId: replenishment.id,
         createdBy: actor.id,
       });
-      const result = await this.replenishmentsRepository.markConfirmed(id, confirmedAmount, confirmedDate, actor.id, tx);
+      const result = await this.replenishmentsRepository.markConfirmed(
+        id,
+        replenishment.amount,
+        confirmedDate,
+        actor.id,
+        undefined,
+        tx,
+      );
       await this.auditLogRepository.record(tx, {
         actorId: actor.id,
         actorRole: actor.roleKeys[0] ?? null,
@@ -237,6 +159,7 @@ export class ReplenishmentsService {
       confirmedAmount: row.confirmedAmount ? row.confirmedAmount.toFixed(2) : null,
       confirmedDate: row.confirmedDate ? row.confirmedDate.toISOString().slice(0, 10) : null,
       confirmedAt: row.confirmedAt ? row.confirmedAt.toISOString() : null,
+      confirmedVarianceRemarks: row.confirmedVarianceRemarks,
     };
   }
 

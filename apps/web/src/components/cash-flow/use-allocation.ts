@@ -1,6 +1,7 @@
 "use client";
 
 import type { Allocation } from "@psh/contracts";
+import { randomUuid } from "@psh/ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/api-client";
 
@@ -15,7 +16,6 @@ export interface CreateAllocationInput {
 
 export interface ConfirmAllocationInput {
   allocationId: string;
-  confirmedAmount: string;
   confirmedDate: string;
 }
 
@@ -30,7 +30,7 @@ export function useAllocation(unitId: string) {
     mutationFn: (input: CreateAllocationInput) =>
       apiFetch<Allocation>("/allocations", {
         method: "POST",
-        body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
+        body: JSON.stringify({ ...input, idempotencyKey: randomUuid() }),
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["pending-allocations", unitId] }),
   });
@@ -39,7 +39,7 @@ export function useAllocation(unitId: string) {
     mutationFn: (input: ConfirmAllocationInput) =>
       apiFetch<Allocation>(`/allocations/${input.allocationId}/confirm`, {
         method: "POST",
-        body: JSON.stringify({ confirmedAmount: input.confirmedAmount, confirmedDate: input.confirmedDate }),
+        body: JSON.stringify({ confirmedDate: input.confirmedDate }),
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["pending-allocations", unitId] }),
   });

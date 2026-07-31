@@ -9,6 +9,7 @@ const CLOSING_INCLUDE = {
   counter: true,
   closer: true,
   reopener: true,
+  denominations: true,
 } satisfies Prisma.MonthlyClosingInclude;
 
 export type MonthlyClosingWithRelations = Prisma.MonthlyClosingGetPayload<{ include: typeof CLOSING_INCLUDE }>;
@@ -22,6 +23,7 @@ export interface UpsertCashCountParams {
   variance: Prisma.Decimal;
   remarks: string | null;
   countedBy: string;
+  denominations: Array<{ denomination: number; count: number }>;
 }
 
 @Injectable()
@@ -44,9 +46,12 @@ export class MonthCloseRepository {
     return this.prisma.monthlyClosing.findUnique({ where: { id }, include: CLOSING_INCLUDE });
   }
 
-  async upsertCashCount(params: UpsertCashCountParams): Promise<MonthlyClosingWithRelations> {
+  // Takes an explicit client so the parent upsert, the denomination-row replace, and the
+  // caller's audit-log write all commit or roll back together (rule: audit rows are
+  // written inside the same transaction as the change they describe).
+  async upsertCashCount(params: UpsertCashCountParams, client: Client = this.prisma): Promise<MonthlyClosingWithRelations> {
     const now = new Date();
-    return this.prisma.monthlyClosing.upsert({
+    const closing = await client.monthlyClosing.upsert({
       where: {
         accountId_periodYear_periodMonth: {
           accountId: params.accountId,
@@ -73,14 +78,52 @@ export class MonthCloseRepository {
         countedBy: params.countedBy,
         countedAt: now,
       },
-      include: CLOSING_INCLUDE,
     });
+
+    // Recording a count is itself idempotent/re-recordable before close (upsert keyed on
+    // account+period) — a re-submission must fully replace the prior breakdown, not
+    // merge into it, so delete-then-recreate rather than a per-row upsert.
+    await client.cashCountDenomination.deleteMany({ where: { closingId: closing.id } });
+    if (params.denominations.length > 0) {
+      await client.cashCountDenomination.createMany({
+        data: params.denominations.map((d) => ({ closingId: closing.id, denomination: d.denomination, count: d.count })),
+      });
+    }
+
+    return client.monthlyClosing.findUniqueOrThrow({ where: { id: closing.id }, include: CLOSING_INCLUDE });
   }
 
   async close(id: string, closedBy: string): Promise<MonthlyClosingWithRelations> {
     return this.prisma.monthlyClosing.update({
       where: { id },
       data: { status: "CLOSED", closedBy, closedAt: new Date() },
+      include: CLOSING_INCLUDE,
+    });
+  }
+
+  // ADR-0007: closing a period with no MonthlyClosing row at all (no cash count was ever
+  // recorded) — creates the row directly in CLOSED status. physicalCashCount/variance/
+  // remarks stay null (honest "never counted"), expectedBalance is the caller's
+  // already-computed, now-frozen figure (same computeExpectedBalance call recordCashCount
+  // uses), so getClosing never falls back to a live recompute for this closed period.
+  async closeDirect(
+    accountId: string,
+    periodYear: number,
+    periodMonth: number,
+    expectedBalance: Prisma.Decimal,
+    closedBy: string,
+  ): Promise<MonthlyClosingWithRelations> {
+    const now = new Date();
+    return this.prisma.monthlyClosing.create({
+      data: {
+        accountId,
+        periodYear,
+        periodMonth,
+        expectedBalance,
+        status: "CLOSED",
+        closedBy,
+        closedAt: now,
+      },
       include: CLOSING_INCLUDE,
     });
   }

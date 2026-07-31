@@ -82,7 +82,7 @@ describe("PSH-ISB exclusion completes Phase 1's deferred exit-gate item", () => 
 
 describe("allocation posts to the ledger only on confirmation (FR-CASH-003)", () => {
   it("creating an allocation posts no ledger entry and does not move the balance", async () => {
-    const account = await ensureAccountForUnit("PSH-SOH");
+    const account = await ensureAccountForUnit("PSH-CCS");
     const before = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { id: account.id } });
 
     const cookies = await loginAs("financeofficer@psh.local");
@@ -108,7 +108,7 @@ describe("allocation posts to the ledger only on confirmation (FR-CASH-003)", ()
   });
 
   it("confirming posts exactly one ALLOCATION ledger entry and updates the balance", async () => {
-    const account = await ensureAccountForUnit("PSH-SOH");
+    const account = await ensureAccountForUnit("PSH-CCS");
     const before = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { id: account.id } });
 
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
@@ -128,7 +128,7 @@ describe("allocation posts to the ledger only on confirmation (FR-CASH-003)", ()
     await request(app.getHttpServer())
       .post(`/allocations/${createRes.body.id}/confirm`)
       .set("Cookie", sohawaCookies)
-      .send({ confirmedAmount: "1234.56", confirmedDate: "2026-07-02" })
+      .send({ confirmedDate: "2026-07-02" })
       .expect(201);
 
     const ledgerEntries = await prisma.cashLedgerEntry.findMany({
@@ -143,7 +143,7 @@ describe("allocation posts to the ledger only on confirmation (FR-CASH-003)", ()
   });
 
   it("rejects confirming the same allocation twice", async () => {
-    const account = await ensureAccountForUnit("PSH-SOH");
+    const account = await ensureAccountForUnit("PSH-CCS");
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
     const createRes = await request(app.getHttpServer())
       .post("/allocations")
@@ -160,18 +160,18 @@ describe("allocation posts to the ledger only on confirmation (FR-CASH-003)", ()
     await request(app.getHttpServer())
       .post(`/allocations/${createRes.body.id}/confirm`)
       .set("Cookie", sohawaCookies)
-      .send({ confirmedAmount: "100.00", confirmedDate: "2026-07-03" })
+      .send({ confirmedDate: "2026-07-03" })
       .expect(201);
 
     await request(app.getHttpServer())
       .post(`/allocations/${createRes.body.id}/confirm`)
       .set("Cookie", sohawaCookies)
-      .send({ confirmedAmount: "100.00", confirmedDate: "2026-07-03" })
+      .send({ confirmedDate: "2026-07-03" })
       .expect(409);
   });
 
   it("rejects confirming an allocation outside the caller's unit scope", async () => {
-    const sohAccount = await ensureAccountForUnit("PSH-SOH");
+    const sohAccount = await ensureAccountForUnit("PSH-CCS");
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
     const createRes = await request(app.getHttpServer())
       .post("/allocations")
@@ -184,17 +184,17 @@ describe("allocation posts to the ledger only on confirmation (FR-CASH-003)", ()
       })
       .expect(201);
 
-    // user.sukkur is scoped to PSH-SUK only, not PSH-SOH.
+    // user.sukkur is scoped to PSH-SUK only, not PSH-CCS.
     const sukkurCookies = await loginAs("user.sukkur@psh.local");
     await request(app.getHttpServer())
       .post(`/allocations/${createRes.body.id}/confirm`)
       .set("Cookie", sukkurCookies)
-      .send({ confirmedAmount: "50.00", confirmedDate: "2026-07-04" })
+      .send({ confirmedDate: "2026-07-04" })
       .expect(403);
   });
 
   it("idempotencyKey replay returns the original allocation instead of creating a duplicate", async () => {
-    const account = await ensureAccountForUnit("PSH-SOH");
+    const account = await ensureAccountForUnit("PSH-CCS");
     const key = randomUUID();
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
     const first = await request(app.getHttpServer())
@@ -213,7 +213,7 @@ describe("allocation posts to the ledger only on confirmation (FR-CASH-003)", ()
 
 describe("the cash ledger is append-only at the database level (BR-020, rule 17)", () => {
   it("UPDATE as the running app's own role (psh_app) is a silent no-op", async () => {
-    const account = await ensureAccountForUnit("PSH-SOH");
+    const account = await ensureAccountForUnit("PSH-CCS");
     const entry = await prisma.cashLedgerEntry.findFirst({ where: { accountId: account.id } });
     expect(entry).not.toBeNull();
 
@@ -224,7 +224,7 @@ describe("the cash ledger is append-only at the database level (BR-020, rule 17)
   });
 
   it("DELETE as the running app's own role (psh_app) is rejected outright", async () => {
-    const account = await ensureAccountForUnit("PSH-SOH");
+    const account = await ensureAccountForUnit("PSH-CCS");
     const entry = await prisma.cashLedgerEntry.findFirstOrThrow({ where: { accountId: account.id } });
 
     await expect(
@@ -235,7 +235,7 @@ describe("the cash ledger is append-only at the database level (BR-020, rule 17)
 
 describe("concurrent confirmations produce a correct balance_after chain", () => {
   it("two allocations confirmed concurrently on the same account never lose an update", async () => {
-    const account = await ensureAccountForUnit("PSH-SOH");
+    const account = await ensureAccountForUnit("PSH-CCS");
     const before = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { id: account.id } });
 
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
@@ -255,11 +255,11 @@ describe("concurrent confirmations produce a correct balance_after chain", () =>
       request(app.getHttpServer())
         .post(`/allocations/${a.body.id}/confirm`)
         .set("Cookie", sohawaCookies)
-        .send({ confirmedAmount: "300.00", confirmedDate: "2026-07-06" }),
+        .send({ confirmedDate: "2026-07-06" }),
       request(app.getHttpServer())
         .post(`/allocations/${b.body.id}/confirm`)
         .set("Cookie", sohawaCookies)
-        .send({ confirmedAmount: "700.00", confirmedDate: "2026-07-06" }),
+        .send({ confirmedDate: "2026-07-06" }),
     ]);
 
     const after = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { id: account.id } });
@@ -287,7 +287,7 @@ describe("concurrent confirmations produce a correct balance_after chain", () =>
 
 describe("rebuild-balances (Phase 2 exit gate: zero drift over a 500-entry fixture)", () => {
   it("reports zero drift after 500 synthetic ledger entries posted through the same posting path", async () => {
-    const account = await ensureAccountForUnit("PSH-BWL");
+    const account = await ensureAccountForUnit("PSH-BHW");
     // Drives LedgerPostingRepository directly rather than through HTTP — this test is
     // about balance-computation correctness at volume, not the API layer (which the
     // smaller, focused tests above already cover), and 500 real HTTP round-trips would

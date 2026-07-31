@@ -47,7 +47,6 @@ export class AllocationsController {
   ): Promise<Allocation> {
     return this.allocationsService.confirmAllocation({
       allocationId: id,
-      confirmedAmount: body.confirmedAmount,
       confirmedDate: body.confirmedDate,
       confirmedBy: user,
     });

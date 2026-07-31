@@ -149,6 +149,9 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
             <Field label="Bill total" error={errors.billTotal?.message}>
               <Input inputMode="decimal" placeholder="0.00" {...register("billTotal")} />
             </Field>
+            {/* Confirmed with Finance (2026-07-30): upload is never required, even when
+                checked — centers mail physical bills to Head Office at month-end. This
+                checkbox is informational only, not a gate on an attached file. */}
             <div className="flex items-center gap-2 pt-6">
               <input id="hasBill" type="checkbox" className="h-4 w-4" {...register("hasBill")} />
               <Label htmlFor="hasBill">Bill available</Label>
@@ -214,6 +217,8 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
             <CardTitle>Receipt</CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Intentionally optional, independent of hasBill — see the note by the "Bill
+                available" checkbox above. */}
             <input
               type="file"
               aria-label="Receipt file"

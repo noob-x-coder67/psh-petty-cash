@@ -123,7 +123,7 @@ describe("account/allocation mutations write audit rows", () => {
     await request(app.getHttpServer())
       .post(`/allocations/${createRes.body.id}/confirm`)
       .set("Cookie", sukkurCookies)
-      .send({ confirmedAmount: "42.00", confirmedDate: "2026-07-15" })
+      .send({ confirmedDate: "2026-07-15" })
       .expect(201);
 
     const confirmEntries = await prisma.auditLog.findMany({
@@ -145,28 +145,33 @@ describe("audit rows roll back with their business mutation", () => {
   // is the last statement in the same $transaction as the business write, so a failure
   // anywhere in that transaction must leave neither behind.
 
-  it("REPLENISHMENT_CREATE: a duplicate reference number leaves no orphaned audit row", async () => {
+  it("REPLENISHMENT_REQUEST_OVERRIDE: a duplicate reference number leaves no orphaned audit row", async () => {
+    // ADR-0010: direct-create is gone — the override path is the equivalent
+    // single-step, atomic creation used to reach this scenario now (Finance-initiated,
+    // creates the ReplenishmentRequest and the Replenishment in one transaction). PSH-COE
+    // has no real-dated monthly closings (only synthetic far-future ones elsewhere in
+    // this suite), so it's genuinely BR-013-held for "now" and accepts the override.
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-COE" } });
     const cookies = extractCookies(await loginAs("financemanager@psh.local"));
     const reference = `ATOMIC-${randomUUID()}`;
-    const year = 2900 + Math.floor(Math.random() * 500); // isolated from other integration files' own random ranges
-    const body = (day: string, amount: string) => ({
+    const body = (amount: string) => ({
       unitId: unit.id,
       amount,
-      issueDate: `${year}-06-${day}`,
+      reason: "audit-atomicity test",
+      issueDate: "2026-06-01",
       referenceNo: reference,
       exceptionReason: "audit-atomicity test",
       idempotencyKey: randomUUID(),
     });
 
     await request(app.getHttpServer())
-      .post("/replenishments")
+      .post("/replenishment-requests/override")
       .set("Cookie", cookies)
-      .send(body("01", "111.00"))
+      .send(body("111.00"))
       .expect(201);
 
     const countAfterFirst = await prisma.auditLog.count({
-      where: { entityType: "replenishments", action: "REPLENISHMENT_CREATE" },
+      where: { entityType: "replenishment_requests", action: "REPLENISHMENT_REQUEST_OVERRIDE" },
     });
     const replenishmentCountAfterFirst = await prisma.replenishment.count({
       where: { accountId: (await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } })).id, referenceNo: reference },
@@ -176,13 +181,13 @@ describe("audit rows roll back with their business mutation", () => {
     // Same referenceNo, different idempotencyKey so the idempotent-replay short-circuit
     // doesn't fire — this must reach the real unique index inside the transaction.
     await request(app.getHttpServer())
-      .post("/replenishments")
+      .post("/replenishment-requests/override")
       .set("Cookie", cookies)
-      .send(body("02", "222.00"))
+      .send(body("222.00"))
       .expect(409);
 
     const countAfterSecond = await prisma.auditLog.count({
-      where: { entityType: "replenishments", action: "REPLENISHMENT_CREATE" },
+      where: { entityType: "replenishment_requests", action: "REPLENISHMENT_REQUEST_OVERRIDE" },
     });
     const replenishmentCountAfterSecond = await prisma.replenishment.count({
       where: { accountId: (await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } })).id, referenceNo: reference },
@@ -193,7 +198,7 @@ describe("audit rows roll back with their business mutation", () => {
   });
 
   it("EXPENSE_CREATE: a zero-total voucher (real CHECK-constraint failure) leaves no orphaned audit row", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const cookies = extractCookies(await loginAs("user.sohawa@psh.local"));
 

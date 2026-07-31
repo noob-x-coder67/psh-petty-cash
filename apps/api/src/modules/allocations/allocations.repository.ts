@@ -43,11 +43,18 @@ export class AllocationsRepository {
     confirmedAmount: string,
     confirmedDate: Date,
     confirmedBy: string,
+    varianceRemarks: string | undefined,
     client: Client = this.prisma,
   ): Promise<CashAllocation> {
     return client.cashAllocation.update({
       where: { id },
-      data: { confirmedAmount, confirmedDate, confirmedBy, confirmedAt: new Date() },
+      data: {
+        confirmedAmount,
+        confirmedDate,
+        confirmedBy,
+        confirmedAt: new Date(),
+        confirmedVarianceRemarks: varianceRemarks ?? null,
+      },
     });
   }
 }

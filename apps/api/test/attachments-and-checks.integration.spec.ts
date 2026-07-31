@@ -73,7 +73,7 @@ async function createVoucher(unitCode: string, cookies: string[]) {
 describe("attachment upload (FR-DOC-001/002/006)", () => {
   it("accepts a real JPEG and records checksum/uploader/mimeType", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
+    const voucher = await createVoucher("PSH-CCS", cookies);
     const jpeg = await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: 200, g: 10, b: 10 } } })
       .jpeg()
       .toBuffer();
@@ -98,7 +98,7 @@ describe("attachment upload (FR-DOC-001/002/006)", () => {
 
   it("accepts a real PDF", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
+    const voucher = await createVoucher("PSH-CCS", cookies);
     const pdf = Buffer.from("%PDF-1.4\n%mock pdf content for magic-byte sniffing test\n%%EOF");
 
     const res = await request(app.getHttpServer())
@@ -112,7 +112,7 @@ describe("attachment upload (FR-DOC-001/002/006)", () => {
 
   it("rejects a renamed non-image/PDF file — magic bytes, not the extension, are checked", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
+    const voucher = await createVoucher("PSH-CCS", cookies);
     const fakeImage = Buffer.from("this is plain text pretending to be a jpeg");
 
     await request(app.getHttpServer())
@@ -126,7 +126,7 @@ describe("attachment upload (FR-DOC-001/002/006)", () => {
 describe("authorized view/download and cross-unit 403 (AC-016, Phase 4 exit gate)", () => {
   it("an authorized same-unit user can view and download", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
+    const voucher = await createVoucher("PSH-CCS", cookies);
     const jpeg = await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 1, g: 2, b: 3 } } })
       .jpeg()
       .toBuffer();
@@ -152,7 +152,7 @@ describe("authorized view/download and cross-unit 403 (AC-016, Phase 4 exit gate
 
   it("a user from another unit gets 403 on /attachments/:id/view", async () => {
     const sohawaCookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", sohawaCookies);
+    const voucher = await createVoucher("PSH-CCS", sohawaCookies);
     const jpeg = await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 5, g: 5, b: 5 } } })
       .jpeg()
       .toBuffer();
@@ -173,7 +173,7 @@ describe("authorized view/download and cross-unit 403 (AC-016, Phase 4 exit gate
 describe("byte deletion mechanism (BR-014, BR-015, FR-DOC-013)", () => {
   it("deleting bytes clears storage columns but leaves the row, its metadata, and the voucher intact", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
+    const voucher = await createVoucher("PSH-CCS", cookies);
     const jpeg = await sharp({ create: { width: 2, height: 2, channels: 3, background: { r: 9, g: 9, b: 9 } } })
       .jpeg()
       .toBuffer();
@@ -213,8 +213,8 @@ describe("byte deletion mechanism (BR-014, BR-015, FR-DOC-013)", () => {
 describe("Checked/Unchecked (BR-008, FR-CHK-001..007)", () => {
   it("Checked never moves the balance and requires no reason", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SOH" } });
+    const voucher = await createVoucher("PSH-CCS", cookies);
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const before = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
 
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
@@ -242,7 +242,7 @@ describe("Checked/Unchecked (BR-008, FR-CHK-001..007)", () => {
 
   it("a Center User cannot mark Checked (permission-gated to Finance/Super Admin)", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
+    const voucher = await createVoucher("PSH-CCS", cookies);
 
     await request(app.getHttpServer())
       .post(`/expenses/${voucher.id}/check`)
@@ -256,7 +256,7 @@ describe("Checked/Unchecked (BR-008, FR-CHK-001..007)", () => {
   // scratch.
   it("reverting to Unchecked requires a reason and is recorded in history", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucher = await createVoucher("PSH-SOH", cookies);
+    const voucher = await createVoucher("PSH-CCS", cookies);
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
 
     await request(app.getHttpServer())
@@ -291,8 +291,8 @@ describe("Checked/Unchecked (BR-008, FR-CHK-001..007)", () => {
 
   it("bulk-check marks all unchecked vouchers and skips ones already Checked", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
-    const voucherA = await createVoucher("PSH-SOH", cookies);
-    const voucherB = await createVoucher("PSH-SOH", cookies);
+    const voucherA = await createVoucher("PSH-CCS", cookies);
+    const voucherB = await createVoucher("PSH-CCS", cookies);
     const financeOfficerCookies = await loginAs("financeofficer@psh.local");
 
     await request(app.getHttpServer())

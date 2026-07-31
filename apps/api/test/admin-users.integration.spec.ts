@@ -50,7 +50,7 @@ function csrfTokenFrom(cookies: string[]): string {
 // to confirm the unit-access grant/revoke endpoints round-trip; never actually enables
 // petty cash or touches Appendix E's real 10 units.
 async function findAnyUnit(): Promise<{ id: string; code: string }> {
-  const unit = await prisma.organizationalUnit.findFirstOrThrow({ where: { code: "PSH-SOH" } });
+  const unit = await prisma.organizationalUnit.findFirstOrThrow({ where: { code: "PSH-CCS" } });
   return unit;
 }
 

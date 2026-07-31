@@ -4,36 +4,16 @@ import type { Replenishment } from "@psh/contracts";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/api-client";
 
-export interface CreateReplenishmentInput {
-  unitId: string;
-  amount: string;
-  issueDate: string;
-  referenceNo?: string;
-  paymentMode?: string;
-  remarks?: string;
-  exceptionReason?: string;
-}
-
+// ADR-0010: direct-create is gone — a Replenishment only ever comes from
+// ReplenishmentRequestApprovalQueue's approve/override actions (use-replenishment-request.ts).
+// This hook now only covers what didn't change: hand-to-hand confirm receipt (ADR-0009).
 export interface ConfirmReplenishmentInput {
   replenishmentId: string;
-  confirmedAmount: string;
   confirmedDate: string;
 }
 
 export function useReplenishment(unitId: string) {
   const queryClient = useQueryClient();
-
-  const create = useMutation({
-    mutationFn: (input: CreateReplenishmentInput) =>
-      apiFetch<Replenishment>("/replenishments", {
-        method: "POST",
-        body: JSON.stringify({ ...input, idempotencyKey: crypto.randomUUID() }),
-      }),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["compliance", unitId] });
-      void queryClient.invalidateQueries({ queryKey: ["pending-replenishments", unitId] });
-    },
-  });
 
   // Invalidates the pending-replenishments list (confirming removes a row from it) —
   // still no compliance invalidation here, same reasoning as before: confirming
@@ -42,16 +22,12 @@ export function useReplenishment(unitId: string) {
     mutationFn: (input: ConfirmReplenishmentInput) =>
       apiFetch<Replenishment>(`/replenishments/${input.replenishmentId}/confirm`, {
         method: "POST",
-        body: JSON.stringify({ confirmedAmount: input.confirmedAmount, confirmedDate: input.confirmedDate }),
+        body: JSON.stringify({ confirmedDate: input.confirmedDate }),
       }),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["pending-replenishments", unitId] }),
   });
 
   return {
-    createReplenishment: create.mutate,
-    isCreating: create.isPending,
-    createError: create.error,
-    created: create.data,
     confirmReplenishment: confirm.mutate,
     isConfirming: confirm.isPending,
     confirmError: confirm.error,

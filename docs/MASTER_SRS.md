@@ -154,15 +154,15 @@ Pakistan Sweet Home - AFP Head Office, H-9 Islamabad, is the central monitoring,
 4.2 Organizational Units
 Type	Operating Unit	Petty-Cash Account	System Treatment
 Center	Pakistan Sweet Home Islamabad (PSH-ISB)	NO	Organizational reference only; excluded from all petty-cash operations
-Center	Pakistan Sweet Home Cadet College Sohawa	YES	Separate account and ledger
-Center	Pakistan Sweet Home Sukkur	YES	Separate account and ledger
-Center	Pakistan Sweet Home Bhalwal	YES	Separate account and ledger
-Center	Pakistan Sweet Home Center of Excellence, Rehara, Rawalakot, AJK	YES	Separate account and ledger
-Project Location	Fatima Tuz Zahra Dastarkhawan - Raja Bazaar, Rawalpindi	YES	Separate account and ledger
-Project Location	Fatima Tuz Zahra Dastarkhawan - Liaquat Bagh, Rawalpindi	YES	Separate account and ledger
-Project Location	Pakistan Sweet Home Rehabilitation Center - Chakri, Rawalpindi	YES	Separate account and ledger
-Project Location	Pakistan Sweet Home Rehabilitation Center - H-9 Islamabad	YES	Separate project-location account; distinct from PSH-ISB
-Project / Service	Pakistan Sweet Home Free Burial Service (Safar-e-Akhrat)	YES	Separate account; operational location configurable
+Center	Pakistan Sweet Home Cadet College Sohawa (PSH-CCS)	YES	Separate account and ledger
+Center	Pakistan Sweet Home Sukkur (PSH-SUK)	YES	Separate account and ledger
+Center	Pakistan Sweet Home Bhalwal (PSH-BHW)	YES	Separate account and ledger
+Center	Pakistan Sweet Home Center of Excellence, Rehara, Rawalakot, AJK (PSH-COE)	YES	Separate account and ledger
+Project Location	Fatima Tuz Zahra Dastarkhawan - DHQ Raja Bazar, Rawalpindi (FTZ-DST-DHQ)	YES	Separate account and ledger
+Project Location	Fatima Tuz Zahra Dastarkhawan - MCR, Rawalpindi (FTZ-DST-MCR)	YES	Separate account and ledger
+Project Location	Pakistan Sweet Home Rehabilitation Center - Chakri, Rawalpindi (PSH-REHAB-CHK)	YES	Separate account and ledger
+Project Location	Pakistan Sweet Home Rehabilitation Center - H-9 Islamabad (PSH-REHAB-H9)	YES	Separate project-location account; distinct from PSH-ISB
+Project / Service	Pakistan Sweet Home Free Burial Service, Rakh Dhamyal (SAFAR-AKH)	YES	Separate account; operational location configurable
 Critical Exclusion
 PSH-ISB must be excluded by data rule, not merely hidden in the interface. APIs, database constraints, seed data and reports must prevent a petty-cash account from being created for the PSH-ISB organizational-unit code.
 4.3 Hierarchy Model
@@ -239,6 +239,8 @@ Upload bill	R	I	I	I	I
 Mark receipt Checked	I	I	R	A	A
 Edit recorded entry	I	I	I	A	A
 Record allocation	I	I	R	A	A
+Submit replenishment request (ADR-0010)	R	R	I	I	I
+Approve/reject replenishment request (ADR-0010)	I	I	I	A	A
 Enter physical cash	R	A	C	A	I
 Close month	I	C	R	A	A
 Manage users/units	I	I	I	C	A
@@ -271,7 +273,7 @@ BR-020	No silent deletion	Recorded financial entries cannot disappear without an
 2. Finance enters amount, issue date, payment/reference details and remarks.
 3. System validates that the unit is petty-cash enabled and is not PSH-ISB.
 4. Allocation is written to the unit cash ledger.
-5. Unit confirms receipt date and received amount.
+5. Unit confirms receipt of the exact allocated amount (locked, hand-to-hand handoff) plus the receipt date; a discrepancy is an exceptional case outside this flow, not a variable figure entered here.
 6. Dashboard and balance update immediately.
 8.2 Expense Entry
 1. Authorized user selects own assigned unit.
@@ -298,13 +300,14 @@ BR-020	No silent deletion	Recorded financial entries cannot disappear without an
 4. Authorized changes are saved.
 5. System recalculates ledger impact and balance.
 6. Audit log stores field-level before/after values, actor, timestamp and reason.
-8.5 Replenishment
-1. Unit or Finance views current balance and spending.
-2. System evaluates three preceding monthly cash-count records.
-3. When compliant, Finance records or processes replenishment according to policy.
-4. When non-compliant, system shows Hold - Three-Month Closing Incomplete.
-5. Finance Manager may record an authorized exception with reason.
-6. New cash is added to the ledger after receipt confirmation.
+8.5 Replenishment (ADR-0010: request → approve → confirm)
+1. The unit's own assigned user views current balance and spending, and submits a replenishment request (amount and reason only) when cash is needed.
+2. System evaluates three preceding monthly cash-count records at submission time; when non-compliant, the request is refused outright with Hold - Three-Month Closing Incomplete — the unit has no bypass.
+3. Finance Manager or Super Admin reviews pending requests and either approves (supplying issue date, payment/reference details and remarks; the requested amount itself is locked, never editable at this step) or rejects with a reason.
+4. Approving creates the replenishment record and adds it to the unit cash ledger as pending receipt.
+5. Separately, a Finance Manager or Super Admin may record an audited exception for a genuinely held unit, which submits and approves a replenishment in one step on the unit's behalf — this is the only route past the three-month hold, and only Finance can invoke it.
+6. Unit confirms receipt of the exact replenished amount (locked, hand-to-hand handoff) plus the receipt date, identically to Cash Allocation's own confirm step (§8.1 step 5).
+7. Dashboard and balance update immediately on confirmation.
 8.6 Month Close and Cash Count
 1. Unit enters physical cash count for the month.
 2. System calculates expected closing balance and variance.
@@ -1091,8 +1094,10 @@ Edit saved expense	No	No	No	Yes	Yes
 View receipt	Own	Own	All	All	All
 Mark receipt Checked	No	No	Yes	Yes	Yes
 Record allocation	No	No	Yes	Yes	Yes
-Confirm allocation receipt	Yes	Yes	No	Yes	Yes
-Enter cash count	Yes	Yes	Yes	Yes	Yes
+Confirm allocation receipt	Yes	Yes	No	No	No
+Submit replenishment request (ADR-0010)	Yes	Yes	No	No	No
+Approve/reject replenishment request (ADR-0010)	No	No	No	Yes	Yes
+Enter cash count	Yes	Yes	Yes	No	No
 Close month	No	No	No	Yes	Yes
 Override three-month hold	No	No	No	Yes	Yes
 Manage categories	No	No	No	Policy only	Yes/config
@@ -1137,14 +1142,20 @@ Negative Balance	✓	✓	✓	✓	✓	✓	✓
 Three-Month Compliance	✓	✓	—	—	—	—	✓
 Audit Trail	✓	✓	✓	✓	✓	✓	✓
   Appendix E. Demo Seed Data
-Seed active petty-cash units for Cadet College Sohawa, Sukkur, Bhalwal, Center of Excellence AJK, Dastarkhawan Raja Bazaar, Dastarkhawan Liaquat Bagh, Rehabilitation Center Chakri, Rehabilitation Center H-9, and Free Burial Service. Seed PSH-ISB as an organizational unit with petty_cash_enabled=false and no account.
+Seed active petty-cash units for Cadet College Sohawa, Sukkur, Bhalwal, Center of Excellence AJK, Dastarkhawan DHQ Raja Bazaar, Dastarkhawan MCR, Rehabilitation Center Chakri, Rehabilitation Center H-9, and Free Burial Service (Rakh Dhamyal). Seed PSH-ISB as an organizational unit with petty_cash_enabled=false and no account. Each of the 9 petty-cash units has exactly one dedicated Center/Project User demo account, scoped to that unit only.
 Demo Role	Example Scope
 Super Admin	All configuration
 Finance Manager	All petty-cash units
 Finance Officer	All petty-cash units; receipt check
-Center User - Sohawa	Cadet College Sohawa only
+Center User - Sohawa	Cadet College Sohawa (PSH-CCS) only
 Center User - Sukkur	PSH Sukkur only
-Project User - Rehabilitation	Chakri and H-9 rehabilitation locations only
+Center User - Bhalwal	Bhalwal (PSH-BHW) only
+Center User - Rawalakot (COE)	Center of Excellence (PSH-COE) only
+Project User - Chakri	Rehabilitation Center Chakri (PSH-REHAB-CHK) only
+Project User - H-9 Islamabad	Rehabilitation Center H-9 (PSH-REHAB-H9) only
+Project User - DHQ Raja Bazar	Dastarkhawan DHQ Raja Bazar (FTZ-DST-DHQ) only
+Project User - MCR	Dastarkhawan MCR (FTZ-DST-MCR) only
+Service User - Rakh Dhamyal	Free Burial Service (SAFAR-AKH) only
 Auditor	Read-only all units
   Appendix F. Technology Baseline and Official References
 Technology versions shall be pinned in the lockfile and use the latest patched stable release within the approved major line at kickoff. Security advisories override convenience.

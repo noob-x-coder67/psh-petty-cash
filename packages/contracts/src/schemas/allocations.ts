@@ -13,8 +13,11 @@ export const CreateAllocationRequestSchema = z.object({
 });
 export type CreateAllocationRequest = z.infer<typeof CreateAllocationRequestSchema>;
 
+// ADR-0009: confirming receipt is a locked, exact-match attestation against the
+// original allocated amount, not a variable figure the confirming user enters —
+// petty cash is handed over hand-to-hand, so there is no realistic scenario where a
+// different amount is silently received. Only the date is client-supplied.
 export const ConfirmAllocationRequestSchema = z.object({
-  confirmedAmount: decimalString,
   confirmedDate: z.iso.date(),
 });
 export type ConfirmAllocationRequest = z.infer<typeof ConfirmAllocationRequestSchema>;
@@ -33,5 +36,6 @@ export const AllocationSchema = z.object({
   confirmedAmount: z.string().nullable(),
   confirmedDate: z.iso.date().nullable(),
   confirmedAt: z.string().nullable(),
+  confirmedVarianceRemarks: z.string().nullable(),
 });
 export type Allocation = z.infer<typeof AllocationSchema>;

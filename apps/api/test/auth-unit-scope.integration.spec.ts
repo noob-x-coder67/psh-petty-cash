@@ -37,7 +37,8 @@ const DEMO_EMAILS = [
   "financeofficer@psh.local",
   "user.sohawa@psh.local",
   "user.sukkur@psh.local",
-  "user.rehab@psh.local",
+  "user.rehabchakri@psh.local",
+  "user.rehabh9@psh.local",
   "auditor@psh.local",
 ];
 
@@ -109,32 +110,44 @@ describe("GET /me and GET /units without a session", () => {
 });
 
 describe("unit scope isolation (Build Plan §5 Phase 1 exit gate)", () => {
-  it("Center User - Sohawa sees only PSH-SOH, not other units", async () => {
+  it("Center User - Sohawa sees only PSH-CCS, not other units", async () => {
     const res = await request(app.getHttpServer())
       .get("/units")
       .set("Cookie", cookiesFor("user.sohawa@psh.local"))
       .expect(200);
     const codes = (res.body as Array<{ code: string }>).map((u) => u.code);
-    expect(codes).toEqual(["PSH-SOH"]);
+    expect(codes).toEqual(["PSH-CCS"]);
   });
 
-  it("Center User - Sukkur sees only PSH-SUK, and specifically not PSH-SOH", async () => {
+  it("Center User - Sukkur sees only PSH-SUK, and specifically not PSH-CCS", async () => {
     const res = await request(app.getHttpServer())
       .get("/units")
       .set("Cookie", cookiesFor("user.sukkur@psh.local"))
       .expect(200);
     const codes = (res.body as Array<{ code: string }>).map((u) => u.code);
     expect(codes).toEqual(["PSH-SUK"]);
-    expect(codes).not.toContain("PSH-SOH");
+    expect(codes).not.toContain("PSH-CCS");
   });
 
-  it("Project User - Rehabilitation sees exactly its two granted units", async () => {
+  // The two REHAB units used to share one Project User (both granted at once). Each now
+  // gets its own dedicated UNIT_USER, scoped to exactly one — the shared account
+  // (user.rehab@psh.local) is deactivated, not reused for either.
+  it("Project User - Chakri sees only PSH-REHAB-CHK", async () => {
     const res = await request(app.getHttpServer())
       .get("/units")
-      .set("Cookie", cookiesFor("user.rehab@psh.local"))
+      .set("Cookie", cookiesFor("user.rehabchakri@psh.local"))
       .expect(200);
-    const codes = (res.body as Array<{ code: string }>).map((u) => u.code).sort();
-    expect(codes).toEqual(["REHAB-CHK", "REHAB-H9"]);
+    const codes = (res.body as Array<{ code: string }>).map((u) => u.code);
+    expect(codes).toEqual(["PSH-REHAB-CHK"]);
+  });
+
+  it("Project User - H-9 Islamabad sees only PSH-REHAB-H9", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/units")
+      .set("Cookie", cookiesFor("user.rehabh9@psh.local"))
+      .expect(200);
+    const codes = (res.body as Array<{ code: string }>).map((u) => u.code);
+    expect(codes).toEqual(["PSH-REHAB-H9"]);
   });
 
   it.each(["superadmin@psh.local", "financemanager@psh.local", "financeofficer@psh.local", "auditor@psh.local"])(

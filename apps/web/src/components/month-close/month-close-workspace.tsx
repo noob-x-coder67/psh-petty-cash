@@ -1,6 +1,6 @@
 "use client";
 
-import type { OrganizationalUnit } from "@psh/contracts";
+import { CASH_COUNT_DENOMINATIONS, type OrganizationalUnit } from "@psh/contracts";
 import {
   Alert,
   Button,
@@ -20,9 +20,10 @@ import {
   StatusBadge,
   VarianceCell,
 } from "@psh/ui";
-import { Lock, ShieldCheck } from "lucide-react";
+import { ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { ComplianceTimeline } from "./compliance-timeline";
+import { DenominationCountTable } from "./denomination-count-table";
 import { useCompliance } from "./use-compliance";
 import { useMonthlyClosing, type Period } from "./use-monthly-closing";
 
@@ -43,7 +44,15 @@ function currentKarachiPeriod(): Period {
   };
 }
 
-export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUnit; canClose: boolean }) {
+export function MonthCloseWorkspace({
+  unit,
+  canClose,
+  canEnterCashCount,
+}: {
+  unit: OrganizationalUnit;
+  canClose: boolean;
+  canEnterCashCount: boolean;
+}) {
   const [period, setPeriod] = useState<Period>(currentKarachiPeriod);
   const {
     closing,
@@ -60,25 +69,31 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
   } = useMonthlyClosing(unit.id, period);
   const { data: compliance } = useCompliance(unit.id);
 
-  const [physicalCashCount, setPhysicalCashCount] = useState("");
+  const [denominationCounts, setDenominationCounts] = useState<Record<number, number>>({});
   const [remarks, setRemarks] = useState("");
   const [reopenReason, setReopenReason] = useState("");
   const [showReopenInput, setShowReopenInput] = useState(false);
   const [confirmCloseOpen, setConfirmCloseOpen] = useState(false);
 
+  const enteredTotal = CASH_COUNT_DENOMINATIONS.reduce(
+    (sum, denomination) => sum + denomination * (denominationCounts[denomination] ?? 0),
+    0,
+  );
   const varianceWouldBeNonZero =
-    closing?.expectedBalance !== undefined &&
-    physicalCashCount !== "" &&
-    Number(physicalCashCount) !== Number(closing?.expectedBalance ?? "0");
+    closing?.expectedBalance !== undefined && enteredTotal !== Number(closing?.expectedBalance ?? "0");
 
   function handleSubmitCount(): void {
-    recordCashCount({ physicalCashCount, remarks: remarks || undefined });
-    setPhysicalCashCount("");
+    const denominations = CASH_COUNT_DENOMINATIONS.map((denomination) => ({
+      denomination,
+      count: denominationCounts[denomination] ?? 0,
+    }));
+    recordCashCount({ denominations, remarks: remarks || undefined });
+    setDenominationCounts({});
     setRemarks("");
   }
 
   function handleClose(): void {
-    if (closing?.id) closeMonth(closing.id);
+    closeMonth();
   }
 
   function handleReopen(): void {
@@ -153,7 +168,10 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
 
       {isLoading ? <p className="text-sm text-ink-muted">Loading...</p> : null}
 
-      {closing ? (
+      {/* ADR-0007: entirely absent for Finance Manager/Super Admin — not editable, not
+          read-only. They close administratively without ever seeing the physical count;
+          reconciling it is the center's (and Finance Officer's) job exclusively. */}
+      {closing && canEnterCashCount ? (
         <Card>
           <CardHeader>
             <CardTitle>Physical Cash Count</CardTitle>
@@ -170,32 +188,26 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
                   <VarianceCell expected={closing.expectedBalance ?? "0.00"} actual={closing.physicalCashCount} />
                 </div>
               ) : null}
-              <div>
-                <p className="text-xs text-ink-muted">Vouchers / Expenditure</p>
-                <p className="text-sm text-ink">
-                  {closing.summary.voucherCount} · <Money value={closing.summary.totalExpenditure} />
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-ink-muted">Unchecked / Missing Bill / Negative Events</p>
-                <p className="text-sm text-ink">
-                  {closing.summary.uncheckedCount} / {closing.summary.missingBillCount} /{" "}
-                  {closing.summary.negativeBalanceEvents}
-                </p>
-              </div>
             </div>
 
+            {/* Empty for a legacy/pre-feature closing that only ever had a typed total
+                (never backfilled) — the VarianceCell above already displays those
+                unchanged; this section only adds the breakdown when one was recorded. */}
+            {closing.denominations.length > 0 ? (
+              <div className="border-t border-border pt-3">
+                <p className="mb-1.5 text-xs text-ink-muted">Denomination Breakdown</p>
+                <DenominationCountTable
+                  counts={Object.fromEntries(closing.denominations.map((d) => [d.denomination, d.count]))}
+                  readOnly
+                />
+              </div>
+            ) : null}
+
             {closing.status === "OPEN" ? (
-              <div className="flex flex-wrap items-end gap-3 border-t border-border pt-3">
+              <div className="flex flex-col items-start gap-3 border-t border-border pt-3">
                 <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="physical-cash-count">Physical Cash Count</Label>
-                  <Input
-                    id="physical-cash-count"
-                    aria-label="Physical cash count"
-                    value={physicalCashCount}
-                    onChange={(event) => setPhysicalCashCount(event.target.value)}
-                    className="w-40"
-                  />
+                  <Label>Physical Cash Count</Label>
+                  <DenominationCountTable counts={denominationCounts} onChange={setDenominationCounts} />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <Label htmlFor="cash-count-remarks">
@@ -212,7 +224,7 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
                     className="w-64"
                   />
                 </div>
-                <Button onClick={handleSubmitCount} disabled={isRecording || !physicalCashCount}>
+                <Button onClick={handleSubmitCount} disabled={isRecording}>
                   {isRecording ? "Saving..." : "Save Cash Count"}
                 </Button>
                 {recordError ? (
@@ -222,6 +234,33 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
                 ) : null}
               </div>
             ) : null}
+
+            {closing.remarks ? <p className="text-sm text-ink">Remarks: {closing.remarks}</p> : null}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {closing ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Month Summary</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs text-ink-muted">Vouchers / Expenditure</p>
+                <p className="text-sm text-ink">
+                  {closing.summary.voucherCount} · <Money value={closing.summary.totalExpenditure} />
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-ink-muted">Unchecked / Missing Bill / Negative Events</p>
+                <p className="text-sm text-ink">
+                  {closing.summary.uncheckedCount} / {closing.summary.missingBillCount} /{" "}
+                  {closing.summary.negativeBalanceEvents}
+                </p>
+              </div>
+            </div>
 
             <div className="flex flex-col gap-2 border-t border-border pt-3">
               {closing.status === "OPEN" && canClose ? (
@@ -233,18 +272,12 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
                   <button
                     type="button"
                     onClick={() => setConfirmCloseOpen(true)}
-                    disabled={isClosing || !closing.physicalCashCount}
+                    disabled={isClosing}
                     className="psh-focus-ring inline-flex h-11 items-center gap-2 rounded-control bg-linear-to-r from-midnight-900 to-midnight-700 px-5 text-sm font-semibold text-white shadow-2 transition-all hover:shadow-3 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
                   >
                     <ShieldCheck className="h-4 w-4" aria-hidden />
                     {isClosing ? "Closing..." : "Close Month"}
                   </button>
-                  {!closing.physicalCashCount ? (
-                    <span className="flex items-center gap-1.5 text-xs text-ink-muted">
-                      <Lock className="h-3.5 w-3.5" aria-hidden />
-                      Record a physical cash count above before closing.
-                    </span>
-                  ) : null}
                 </div>
               ) : null}
               {closeError ? (
@@ -293,7 +326,6 @@ export function MonthCloseWorkspace({ unit, canClose }: { unit: OrganizationalUn
                 {closing.closedAt ? ` at ${new Date(closing.closedAt).toLocaleString()}` : ""}
               </p>
             ) : null}
-            {closing.remarks ? <p className="text-sm text-ink">Remarks: {closing.remarks}</p> : null}
           </CardContent>
         </Card>
       ) : null}

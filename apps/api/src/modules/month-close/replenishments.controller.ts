@@ -1,10 +1,8 @@
 import { Body, Controller, Get, Param, Post } from "@nestjs/common";
 import {
   ConfirmReplenishmentRequestSchema,
-  CreateReplenishmentRequestSchema,
   type ComplianceResponse,
   type ConfirmReplenishmentRequest,
-  type CreateReplenishmentRequest,
   type Replenishment,
 } from "@psh/contracts";
 import { Audited } from "../../common/decorators/audited.decorator";
@@ -15,22 +13,13 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { ReplenishmentsService } from "./replenishments.service";
 
+// ADR-0010: direct-create is gone — a Replenishment row is only ever produced by
+// ReplenishmentRequestsController's approve/override routes. This controller now only
+// covers the parts of the flow that didn't change: hand-to-hand confirm receipt
+// (ADR-0009) and the compliance timeline.
 @Controller()
 export class ReplenishmentsController {
   constructor(private readonly replenishmentsService: ReplenishmentsService) {}
-
-  // No separate "record replenishment" permission exists (Appendix A has no row for
-  // it) — a replenishment is treated as the same capability as recording an allocation.
-  @Post("replenishments")
-  @RequiresPermission("allocation.record")
-  @RequiresUnitScope("body.unitId")
-  @Audited({ action: "REPLENISHMENT_CREATE", entityType: "replenishments" })
-  async create(
-    @Body(new ZodValidationPipe(CreateReplenishmentRequestSchema)) body: CreateReplenishmentRequest,
-    @CurrentUser() user: AuthenticatedUser,
-  ): Promise<Replenishment> {
-    return this.replenishmentsService.createReplenishment({ ...body, actor: user });
-  }
 
   @Post("replenishments/:id/confirm")
   @RequiresPermission("allocation.confirm_receipt")

@@ -108,7 +108,7 @@ export function Masthead({ user, onOpenCommandPalette }: MastheadProps) {
             <SelectContent>
               {units.map((unit) => (
                 <SelectItem key={unit.id} value={unit.code}>
-                  {unit.name}
+                  {unit.code}
                 </SelectItem>
               ))}
             </SelectContent>

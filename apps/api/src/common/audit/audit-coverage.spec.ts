@@ -10,6 +10,7 @@ import { MeController } from "../../modules/auth/me.controller";
 import { DashboardController } from "../../modules/dashboard/dashboard.controller";
 import { ExpensesController } from "../../modules/expenses/expenses.controller";
 import { MonthCloseController } from "../../modules/month-close/month-close.controller";
+import { ReplenishmentRequestsController } from "../../modules/month-close/replenishment-requests.controller";
 import { ReplenishmentsController } from "../../modules/month-close/replenishments.controller";
 import { AdminUnitsController } from "../../modules/organization/admin-units.controller";
 import { OrganizationController } from "../../modules/organization/organization.controller";
@@ -42,6 +43,7 @@ const ALL_CONTROLLERS: Constructor[] = [
   AttachmentsController,
   MonthCloseController,
   ReplenishmentsController,
+  ReplenishmentRequestsController,
   ReportsController,
   ExportsController,
   PresetsController,

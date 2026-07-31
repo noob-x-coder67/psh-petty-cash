@@ -24,5 +24,11 @@ export default async function MonthClosePage({
     );
   }
 
-  return <MonthCloseWorkspace unit={selected} canClose={user.permissionKeys.includes("month.close")} />;
+  return (
+    <MonthCloseWorkspace
+      unit={selected}
+      canClose={user.permissionKeys.includes("month.close")}
+      canEnterCashCount={user.permissionKeys.includes("cash_count.enter")}
+    />
+  );
 }

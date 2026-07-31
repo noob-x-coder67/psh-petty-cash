@@ -6,16 +6,21 @@ import { ComplianceTimeline } from "../month-close/compliance-timeline";
 import { useCompliance } from "../month-close/use-compliance";
 import { AllocationForm } from "./allocation-form";
 import { PendingConfirmations } from "./pending-confirmations";
-import { ReplenishmentForm } from "./replenishment-form";
+import { ReplenishmentApprovalQueue } from "./replenishment-approval-queue";
+import { ReplenishmentRequestForm } from "./replenishment-request-form";
 
 export function CashFlowWorkspace({
   unit,
   canOverrideHold,
   canConfirm,
+  canRequestReplenishment,
+  canApproveReplenishment,
 }: {
   unit: OrganizationalUnit;
   canOverrideHold: boolean;
   canConfirm: boolean;
+  canRequestReplenishment: boolean;
+  canApproveReplenishment: boolean;
 }) {
   const { data: compliance } = useCompliance(unit.id);
 
@@ -43,7 +48,10 @@ export function CashFlowWorkspace({
 
       <AllocationForm unitId={unit.id} />
 
-      <ReplenishmentForm unitId={unit.id} compliance={compliance} canOverrideHold={canOverrideHold} />
+      {canRequestReplenishment ? (
+        <ReplenishmentRequestForm unitId={unit.id} compliance={compliance} />
+      ) : null}
+      {canApproveReplenishment ? <ReplenishmentApprovalQueue canOverrideHold={canOverrideHold} /> : null}
     </div>
   );
 }

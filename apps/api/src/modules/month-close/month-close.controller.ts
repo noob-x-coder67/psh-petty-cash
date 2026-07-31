@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post } from "@nestjs/common";
 import {
+  CloseMonthRequestSchema,
   RecordCashCountRequestSchema,
   ReopenMonthRequestSchema,
+  type CloseMonthRequest,
   type MonthlyClosing,
   type RecordCashCountRequest,
   type ReopenMonthRequest,
@@ -29,8 +31,13 @@ export class MonthCloseController {
     return this.monthCloseService.recordCashCount({ ...body, actor: user });
   }
 
+  // ADR-0007: dashboard.view_own_unit, not cash_count.enter — viewing status must stay
+  // available to Finance Manager/Super Admin (who no longer hold cash_count.enter at
+  // all) so they can still see a period and close it. Also picks up Unit In-Charge's
+  // passive visibility and Auditor's read-only-all-units remit, both already granted
+  // this same permission elsewhere.
   @Get(":unitId/:year/:month")
-  @RequiresPermission("cash_count.enter")
+  @RequiresPermission("dashboard.view_own_unit")
   @RequiresUnitScope("param.unitId")
   async getClosing(
     @Param("unitId") unitId: string,
@@ -41,12 +48,18 @@ export class MonthCloseController {
     return this.monthCloseService.getClosing(unitId, year, month, user);
   }
 
-  @Post(":id/close")
+  // ADR-0007: addressed by unit+period, not a row id — a period with no cash count ever
+  // recorded has no MonthlyClosing row yet, and Finance Manager/Super Admin must still be
+  // able to close it directly.
+  @Post("close")
   @RequiresPermission("month.close")
-  @RequiresUnitScope("derived")
+  @RequiresUnitScope("body.unitId")
   @Audited({ action: "MONTH_CLOSE", entityType: "monthly_closings" })
-  async close(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<MonthlyClosing> {
-    return this.monthCloseService.closeMonth(id, user);
+  async close(
+    @Body(new ZodValidationPipe(CloseMonthRequestSchema)) body: CloseMonthRequest,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<MonthlyClosing> {
+    return this.monthCloseService.closeMonth(body.unitId, body.periodYear, body.periodMonth, user);
   }
 
   @Post(":id/reopen")
