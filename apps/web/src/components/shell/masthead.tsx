@@ -16,6 +16,7 @@ import {
 } from "@psh/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Bell, Building2, Calendar, Search } from "lucide-react";
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api-client";
 import { useUnitScope } from "../../lib/use-unit-scope";
@@ -72,14 +73,17 @@ export function Masthead({ user, onOpenCommandPalette }: MastheadProps) {
       )}
     >
       <div className="flex items-center gap-2.5">
-        <div
+        <Image
+          src="/psh-logo.png"
+          alt="Pakistan Sweet Home"
+          width={36}
+          height={36}
+          priority
           className={cn(
-            "flex shrink-0 items-center justify-center rounded-control bg-linear-to-br from-midnight-900 to-royal-600 font-semibold tracking-wide text-white shadow-1 transition-all duration-200",
-            scrolled ? "h-7 w-7 text-[10px]" : "h-9 w-9 text-xs",
+            "shrink-0 object-contain transition-all duration-200",
+            scrolled ? "h-7 w-7" : "h-9 w-9",
           )}
-        >
-          PSH
-        </div>
+        />
         <div className="hidden flex-col leading-tight sm:flex">
           <span className="flex items-center gap-2 text-sm font-semibold text-ink">
             Petty Cash
