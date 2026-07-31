@@ -12,6 +12,14 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans-override" });
 
 export const metadata = {
   title: "PSH Petty Cash",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon-16.png", type: "image/png", sizes: "16x16" },
+      { url: "/icon-32.png", type: "image/png", sizes: "32x32" },
+    ],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180" }],
+  },
 };
 
 // Runs before hydration (blocking, in <head>) so <html> already carries the right

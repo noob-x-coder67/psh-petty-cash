@@ -121,6 +121,11 @@ export const Rpt02RowSchema = z.object({
   direction: z.number().int(),
   amount: z.string(),
   effectiveDate: z.iso.date(),
+  // Display-only, formatted server-side from createdAt (when the entry was actually
+  // recorded) — not a machine-parseable timestamp, and never used for period/month
+  // assignment. effectiveDate itself (above) stays a pure date for that purpose;
+  // never derive it from this field or from createdAt.
+  effectiveTime: z.string(),
   balanceAfter: z.string(),
   sourceTable: z.string().nullable(),
   sourceId: z.string().nullable(),

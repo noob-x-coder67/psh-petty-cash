@@ -56,6 +56,7 @@ const COLUMNS: Record<string, ExportColumn[]> = {
   ],
   "RPT-02": [
     { header: "Date", get: (r) => String(r.effectiveDate) },
+    { header: "Effective Time", get: (r) => String(r.effectiveTime) },
     { header: "Unit", get: (r) => String(r.unitCode) },
     { header: "Entry Type", get: (r) => String(r.entryType) },
     { header: "Direction", get: (r) => (Number(r.direction) > 0 ? "+" : "-") },

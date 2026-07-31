@@ -37,6 +37,22 @@ function toDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
+// Display-only wall-clock time (RPT-02's "Effective Time" column) — rendered in
+// Asia/Karachi, same as every other user-facing time derived from a UTC timestamptz
+// (rule 15, period.util.ts's currentKarachiPeriod). This is purely presentational and
+// must never feed period/month assignment — that stays effectiveDate (a DATE column)
+// and toDateOnly above, untouched.
+const TIME_OF_DAY_FORMAT = new Intl.DateTimeFormat("en-US", {
+  hour: "numeric",
+  minute: "2-digit",
+  hour12: true,
+  timeZone: "Asia/Karachi",
+});
+
+function toTimeOfDay(date: Date): string {
+  return TIME_OF_DAY_FORMAT.format(date);
+}
+
 type Rpt01Row = z.infer<typeof Rpt01RowSchema>;
 type Rpt04CategoryRow = z.infer<typeof Rpt04CategoryRowSchema>;
 type Rpt02Row = z.infer<typeof Rpt02RowSchema>;
@@ -299,6 +315,7 @@ export class ReportsService {
       direction: entry.direction,
       amount: entry.amount.toFixed(2),
       effectiveDate: toDateOnly(entry.effectiveDate),
+      effectiveTime: toTimeOfDay(entry.createdAt),
       balanceAfter: entry.balanceAfter.toFixed(2),
       sourceTable: entry.sourceTable,
       sourceId: entry.sourceId,
