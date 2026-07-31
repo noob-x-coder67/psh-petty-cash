@@ -553,12 +553,14 @@ describe("all 14 implemented reports are also exportable", () => {
     // Prisma, surfacing as an unrelated "Engine is not yet connected" unhandled rejection.
     const deadline = Date.now() + 15_000;
     let status = res.body.status;
+    let errorMessage: string | null = null;
     const exportId = res.body.exportId;
     while (status === "PENDING" && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 200));
       const poll = await request(app.getHttpServer()).get(`/exports/${exportId}`).set("Cookie", cookies).expect(200);
       status = poll.body.status;
+      errorMessage = poll.body.errorMessage;
     }
-    expect(status).toBe("READY");
+    expect(status, errorMessage ?? `Export ${exportId} did not reach READY before the polling deadline`).toBe("READY");
   }, 20_000);
 });

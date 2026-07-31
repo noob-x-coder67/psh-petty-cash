@@ -6,6 +6,7 @@ import {
   computeCategoryPercentage,
   computeCheckAgeDays,
   computeConsolidatedCashAmounts,
+  computeEffectiveBalancePoints,
   computeNegativeBalanceStreaks,
   sumEntryTypes,
   type LedgerPoint,
@@ -183,5 +184,29 @@ describe("computeNegativeBalanceStreaks", () => {
 
   it("returns an empty array for no entries", () => {
     expect(computeNegativeBalanceStreaks([], NOW)).toEqual([]);
+  });
+});
+
+describe("computeEffectiveBalancePoints", () => {
+  it("reconstructs balances in effective-date order instead of reusing posting-order snapshots", () => {
+    const points = computeEffectiveBalancePoints([
+      {
+        effectiveDate: new Date("2026-07-06T00:00:00.000Z"),
+        direction: 1,
+        amount: d("200.00"),
+        sourceTable: "cash_allocations",
+        sourceId: "allocation-1",
+      },
+      {
+        effectiveDate: new Date("2026-07-15T00:00:00.000Z"),
+        direction: -1,
+        amount: d("120.00"),
+        sourceTable: "expense_vouchers",
+        sourceId: "voucher-1",
+      },
+    ]);
+
+    expect(points.map((point) => point.balanceAfter.toFixed(2))).toEqual(["200.00", "80.00"]);
+    expect(computeNegativeBalanceStreaks(points, new Date("2026-07-31T00:00:00.000Z"))).toEqual([]);
   });
 });

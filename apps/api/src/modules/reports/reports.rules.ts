@@ -63,6 +63,31 @@ export interface LedgerPoint {
   sourceId: string | null;
 }
 
+export interface LedgerMovement {
+  effectiveDate: Date;
+  direction: number;
+  amount: Prisma.Decimal;
+  sourceTable: string | null;
+  sourceId: string | null;
+}
+
+/** Rebuilds effective-date balance snapshots from signed ledger movements. The stored
+ * `balanceAfter` is a posting-order snapshot, so using it after sorting backdated entries
+ * by effective date can report a stale final balance. `entries` must already be sorted
+ * by effectiveDate and a stable tiebreaker. */
+export function computeEffectiveBalancePoints(entries: LedgerMovement[]): LedgerPoint[] {
+  let balance = new Prisma.Decimal(0);
+  return entries.map((entry) => {
+    balance = balance.plus(entry.amount.times(entry.direction));
+    return {
+      effectiveDate: entry.effectiveDate,
+      balanceAfter: balance,
+      sourceTable: entry.sourceTable,
+      sourceId: entry.sourceId,
+    };
+  });
+}
+
 export interface NegativeBalanceStreak {
   startDate: Date;
   // null = still negative as of the last entry seen (an ongoing negative period).

@@ -28,8 +28,8 @@ import {
   computeCategoryPercentage,
   computeCheckAgeDays,
   computeConsolidatedCashAmounts,
+  computeEffectiveBalancePoints,
   computeNegativeBalanceStreaks,
-  type LedgerPoint,
 } from "./reports.rules";
 import { ReportsRepository, type ReportPeriod } from "./reports.repository";
 
@@ -350,12 +350,15 @@ export class ReportsService {
 
     const allStreaks: Array<{ accountId: string; startDate: Date; endDate: Date | null; durationDays: number; lowestBalance: Prisma.Decimal; triggerSourceTable: string | null; triggerSourceId: string | null }> = [];
     for (const [accountId, entries] of entriesByAccount) {
-      const points: LedgerPoint[] = entries.map((entry) => ({
-        effectiveDate: entry.effectiveDate,
-        balanceAfter: entry.balanceAfter,
-        sourceTable: entry.sourceTable,
-        sourceId: entry.sourceId,
-      }));
+      const points = computeEffectiveBalancePoints(
+        entries.map((entry) => ({
+          effectiveDate: entry.effectiveDate,
+          direction: entry.direction,
+          amount: entry.amount,
+          sourceTable: entry.sourceTable,
+          sourceId: entry.sourceId,
+        })),
+      );
       for (const streak of computeNegativeBalanceStreaks(points, now)) {
         allStreaks.push({ accountId, ...streak });
       }
@@ -614,19 +617,21 @@ export class ReportsService {
     const targetYear = period.start.getUTCFullYear();
     const targetMonth = period.start.getUTCMonth() + 1;
     const requiredPeriods = precedingThreeMonths(targetYear, targetMonth);
-
-    const rows: Rpt09Row[] = await Promise.all(
-      accounts.map(async (account) => {
-        const statuses = await this.monthCloseRepository.findStatusesForPeriods(account.id, requiredPeriods);
-        const compliance = evaluateThreeMonthCompliance(targetYear, targetMonth, statuses);
-        return {
-          unitCode: account.unit.code,
-          unitName: account.unit.name,
-          isEligibleForReplenishment: compliance.isCompliant,
-          requiredMonths: compliance.requiredMonths,
-        };
-      }),
+    const statusesByAccount = await this.monthCloseRepository.findStatusesForAccountsAndPeriods(
+      accounts.map((account) => account.id),
+      requiredPeriods,
     );
+
+    const rows: Rpt09Row[] = accounts.map((account) => {
+      const statuses = statusesByAccount.get(account.id) ?? new Map();
+      const compliance = evaluateThreeMonthCompliance(targetYear, targetMonth, statuses);
+      return {
+        unitCode: account.unit.code,
+        unitName: account.unit.name,
+        isEligibleForReplenishment: compliance.isCompliant,
+        requiredMonths: compliance.requiredMonths,
+      };
+    });
 
     const eligibleCount = rows.filter((row) => row.isEligibleForReplenishment).length;
     return { rows, summary: { eligibleCount, heldCount: rows.length - eligibleCount } };

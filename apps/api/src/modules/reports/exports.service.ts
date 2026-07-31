@@ -9,6 +9,7 @@ import { ATTACHMENT_STORAGE, type AttachmentStorage } from "../../storage/storag
 import { buildCsv } from "./exports/csv-builder";
 import { buildExcelBuffer } from "./exports/excel-builder";
 import { buildPdfBuffer } from "./exports/pdf-builder";
+import { retryTransientPrismaRead } from "./exports/transient-prisma-retry";
 import { ExportsRepository } from "./exports.repository";
 import { ReportsService } from "./reports.service";
 
@@ -131,7 +132,7 @@ export class ExportsService {
     filters: CreateExportRequest["filters"],
     actor: AuthenticatedUser,
   ): Promise<void> {
-    const response = await this.reportsService.getReport(reportKey, filters, actor);
+    const response = await retryTransientPrismaRead(() => this.reportsService.getReport(reportKey, filters, actor));
     const exportRow = await this.exportsRepository.findById(exportId);
     const format = exportRow?.format ?? "CSV";
     const meta = FORMAT_META[format];

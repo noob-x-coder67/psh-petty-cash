@@ -189,11 +189,30 @@ export class MonthCloseRepository {
     accountId: string,
     periods: Array<{ year: number; month: number }>,
   ): Promise<Map<string, MonthlyClosingStatus>> {
-    if (periods.length === 0) return new Map();
+    const byAccount = await this.findStatusesForAccountsAndPeriods([accountId], periods);
+    return byAccount.get(accountId) ?? new Map();
+  }
+
+  /** Batch form used by cross-unit reports so one report does not fan out into one
+   * concurrent database query per petty-cash account. */
+  async findStatusesForAccountsAndPeriods(
+    accountIds: string[],
+    periods: Array<{ year: number; month: number }>,
+  ): Promise<Map<string, Map<string, MonthlyClosingStatus>>> {
+    if (accountIds.length === 0 || periods.length === 0) return new Map();
     const rows = await this.prisma.monthlyClosing.findMany({
-      where: { accountId, OR: periods.map((p) => ({ periodYear: p.year, periodMonth: p.month })) },
-      select: { periodYear: true, periodMonth: true, status: true },
+      where: {
+        accountId: { in: accountIds },
+        OR: periods.map((p) => ({ periodYear: p.year, periodMonth: p.month })),
+      },
+      select: { accountId: true, periodYear: true, periodMonth: true, status: true },
     });
-    return new Map(rows.map((row) => [`${row.periodYear}-${row.periodMonth}`, row.status]));
+    const result = new Map<string, Map<string, MonthlyClosingStatus>>();
+    for (const row of rows) {
+      const statuses = result.get(row.accountId) ?? new Map<string, MonthlyClosingStatus>();
+      statuses.set(`${row.periodYear}-${row.periodMonth}`, row.status);
+      result.set(row.accountId, statuses);
+    }
+    return result;
   }
 }

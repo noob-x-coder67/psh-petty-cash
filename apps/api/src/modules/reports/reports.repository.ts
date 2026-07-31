@@ -147,9 +147,10 @@ export class ReportsRepository {
     });
   }
 
-  /** RPT-07: every ledger entry ever posted for the given accounts, oldest first — a
+  /** RPT-07: every ledger movement for the given accounts in effective-date order — a
    * negative-balance streak can start well before any date-range filter the caller
-   * applies, so streak detection needs the full chronological history, not a window. */
+   * applies. The service reconstructs running balances from these signed movements;
+   * stored balanceAfter snapshots are in posting order and cannot be reordered safely. */
   async listAllLedgerEntriesChronological(accountIds: string[]) {
     if (accountIds.length === 0) return [];
     return this.prisma.cashLedgerEntry.findMany({
