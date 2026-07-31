@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Readable } from "node:stream";
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { fileTypeFromBuffer } from "file-type";
 import sharp from "sharp";
 import { AuditLogRepository } from "../../common/audit/audit-log.repository";
 import { PrismaService } from "../../common/prisma/prisma.service";
@@ -43,7 +42,8 @@ export class AttachmentsService {
 
     // FR-DOC-002, Build Plan §6.4: magic-byte sniffing, not the client-supplied MIME
     // type or extension — an extension check alone accepts a renamed executable.
-    const sniffed = await fileTypeFromBuffer(input.bytes);
+    const { fileTypeFromBuffer } = await import("file-type");
+const sniffed = await fileTypeFromBuffer(input.bytes);
     if (!sniffed || !ALLOWED_MIME_TYPES.has(sniffed.mime)) {
       throw new BadRequestException("File must be a JPG, PNG or PDF, verified by content");
     }
