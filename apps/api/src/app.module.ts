@@ -5,6 +5,7 @@ import { AccountsModule } from "./modules/accounts/accounts.module";
 import { AllocationsModule } from "./modules/allocations/allocations.module";
 import { AttachmentsModule } from "./modules/attachments/attachments.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { CategoriesModule } from "./modules/categories/categories.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { MonthCloseModule } from "./modules/month-close/month-close.module";
@@ -19,6 +20,7 @@ import { UsersModule } from "./modules/users/users.module";
     CommonModule,
     HealthModule,
     AuthModule,
+    CategoriesModule,
     OrganizationModule,
     AccountsModule,
     AllocationsModule,

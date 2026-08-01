@@ -60,7 +60,20 @@ describe("GET /admin/roles — permission gate (admin.manage_unit_access)", () =
     );
 
     const permissionKeys = res.body.permissions.map((permission: { key: string }) => permission.key);
-    expect(permissionKeys).toEqual(expect.arrayContaining(["admin.manage_users_units", "admin.manage_unit_access"]));
+    expect(permissionKeys).toEqual(
+      expect.arrayContaining(["admin.manage_users_units", "admin.manage_unit_access", "category.manage"]),
+    );
+
+    const categoryPermission = res.body.permissions.find(
+      (permission: { key: string }) => permission.key === "category.manage",
+    );
+    expect(categoryPermission.enforced).toBe(true);
+
+    const categoryGrantees = res.body.grants
+      .filter((grant: { permissionKey: string }) => grant.permissionKey === "category.manage")
+      .map((grant: { roleKey: string }) => grant.roleKey)
+      .sort();
+    expect(categoryGrantees).toEqual(["FINANCE_MANAGER", "SUPER_ADMIN"]);
 
     // admin.manage_users_units is Super-Admin-only (BR-016 unit-management split, Phase
     // 1 of this Administration effort) — Finance Manager must not appear as a grantee.

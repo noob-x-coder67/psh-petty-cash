@@ -132,6 +132,9 @@ describe("total-equality (BR-005), enforced twice", () => {
 
     await expect(
       prisma.$transaction(async (tx) => {
+        const category = await tx.expenseCategory.findUniqueOrThrow({
+          where: { name: "Repair & Maintenance: Building" },
+        });
         const voucher = await tx.expenseVoucher.create({
           data: {
             voucherNo: `DIRECT-TEST-${randomUUID()}`,
@@ -149,7 +152,7 @@ describe("total-equality (BR-005), enforced twice", () => {
             voucherId: voucher.id,
             lineNo: 1,
             description: "Mismatched",
-            category: "BUILDING",
+            categoryId: category.id,
             amount: new Prisma.Decimal("40.00"),
           },
         });

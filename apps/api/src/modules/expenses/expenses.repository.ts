@@ -1,6 +1,11 @@
 import { Injectable } from "@nestjs/common";
 import type { ExpenseVoucher, Prisma } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
+import {
+  LEGACY_CATEGORY_NAME,
+  legacyCategoryFromName,
+  type LegacyExpenseCategory,
+} from "../categories/category-compat";
 
 type Client = PrismaService | Prisma.TransactionClient;
 
@@ -23,7 +28,7 @@ export interface CreateLineParams {
   voucherId: string;
   lineNo: number;
   description: string;
-  category: "BUILDING" | "VEHICLE" | "OTHER";
+  category: LegacyExpenseCategory;
   amount: Prisma.Decimal;
   otherExplanation?: string;
 }
@@ -31,7 +36,7 @@ export interface CreateLineParams {
 export interface VoucherListFilters {
   search?: string;
   checked?: boolean;
-  category?: "BUILDING" | "VEHICLE" | "OTHER";
+  category?: LegacyExpenseCategory;
   dateFrom?: Date;
   dateTo?: Date;
 }
@@ -58,12 +63,35 @@ const ATTACHMENTS_INCLUDE = {
   },
 } satisfies Prisma.ExpenseVoucher$attachmentsArgs;
 
-export type ExpenseVoucherWithLines = Prisma.ExpenseVoucherGetPayload<{
-  include: { lines: true; attachments: typeof ATTACHMENTS_INCLUDE };
+const LINES_INCLUDE = { include: { category: true } } satisfies Prisma.ExpenseVoucher$linesArgs;
+
+type ExpenseLineWithCategoryRecord = Prisma.ExpenseLineGetPayload<typeof LINES_INCLUDE>;
+type CompatibilityExpenseLine = Omit<ExpenseLineWithCategoryRecord, "category"> & {
+  category: LegacyExpenseCategory;
+};
+
+type ExpenseVoucherDbWithLines = Prisma.ExpenseVoucherGetPayload<{
+  include: { lines: typeof LINES_INCLUDE; attachments: typeof ATTACHMENTS_INCLUDE };
 }>;
 
+export type ExpenseVoucherWithLines = Omit<ExpenseVoucherDbWithLines, "lines"> & {
+  lines: CompatibilityExpenseLine[];
+};
+
+function withCompatibilityLines<T extends { lines: ExpenseLineWithCategoryRecord[] }>(
+  voucher: T,
+): Omit<T, "lines"> & { lines: CompatibilityExpenseLine[] } {
+  return {
+    ...voucher,
+    lines: voucher.lines.map(({ category, ...line }) => ({
+      ...line,
+      category: legacyCategoryFromName(category.name),
+    })),
+  };
+}
+
 const REGISTER_INCLUDE = {
-  lines: true,
+  lines: LINES_INCLUDE,
   attachments: ATTACHMENTS_INCLUDE,
   account: {
     select: {
@@ -85,10 +113,11 @@ export class ExpensesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findVoucherById(id: string): Promise<ExpenseVoucherWithLines | null> {
-    return this.prisma.expenseVoucher.findUnique({
+    const voucher = await this.prisma.expenseVoucher.findUnique({
       where: { id },
-      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
+      include: { lines: LINES_INCLUDE, attachments: ATTACHMENTS_INCLUDE },
     });
+    return voucher ? withCompatibilityLines(voucher) : null;
   }
 
   /** Keyset pagination (expense_date, id) — not OFFSET, per Build Plan §2.4/NFR-003.
@@ -134,7 +163,9 @@ export class ExpensesRepository {
         ...(filters.checked !== undefined
           ? { checkedAt: filters.checked ? { not: null } : null }
           : {}),
-        ...(filters.category ? { lines: { some: { category: filters.category } } } : {}),
+        ...(filters.category
+          ? { lines: { some: { category: { name: LEGACY_CATEGORY_NAME[filters.category] } } } }
+          : {}),
         ...(filters.dateFrom || filters.dateTo
           ? {
               expenseDate: {
@@ -150,7 +181,10 @@ export class ExpensesRepository {
       include: REGISTER_INCLUDE,
     });
 
-    return records.map(({ account, ...voucher }) => ({ ...voucher, unit: account.unit }));
+    return records.map(({ account, ...voucher }) => ({
+      ...withCompatibilityLines(voucher),
+      unit: account.unit,
+    }));
   }
 
   async findAccountUnitCode(accountId: string): Promise<string | null> {
@@ -193,7 +227,12 @@ export class ExpensesRepository {
   }
 
   async createLine(params: CreateLineParams, client: Client = this.prisma): Promise<void> {
-    await client.expenseLine.create({ data: params });
+    const category = await client.expenseCategory.findUniqueOrThrow({
+      where: { name: LEGACY_CATEGORY_NAME[params.category] },
+      select: { id: true },
+    });
+    const { category: _legacyCategory, ...line } = params;
+    await client.expenseLine.create({ data: { ...line, categoryId: category.id } });
   }
 
   /** Forces the deferred ck_voucher_totals constraint trigger to fire now, inside the
@@ -207,11 +246,12 @@ export class ExpensesRepository {
     balanceAfter: Prisma.Decimal,
     client: Client = this.prisma,
   ): Promise<ExpenseVoucherWithLines> {
-    return client.expenseVoucher.update({
+    const voucher = await client.expenseVoucher.update({
       where: { id: voucherId },
       data: { balanceAfter },
-      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
+      include: { lines: LINES_INCLUDE, attachments: ATTACHMENTS_INCLUDE },
     });
+    return withCompatibilityLines(voucher);
   }
 
   async findLedgerEntryForVoucher(voucherId: string, client: Client = this.prisma) {

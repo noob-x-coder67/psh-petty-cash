@@ -33,14 +33,6 @@ enum LedgerEntryType {
   @@map("ledger_entry_type")
 }
 
-enum ExpenseCategory {
-  BUILDING
-  VEHICLE
-  OTHER
-
-  @@map("expense_category")
-}
-
 // NOT an approval workflow (BR-001) — no third value, ever.
 enum VoucherState {
   ACTIVE
@@ -575,19 +567,36 @@ model ExpenseVoucher {
   @@map("expense_vouchers")
 }
 
+model ExpenseCategory {
+  id                  String   @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  name                String   @unique @db.Citext
+  requiresExplanation Boolean  @default(false) @map("requires_explanation")
+  isActive            Boolean  @default(true) @map("is_active")
+  sortOrder           Int      @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lines ExpenseLine[]
+
+  @@index([isActive, sortOrder, name], map: "ix_expense_categories_active_order")
+  @@map("expense_categories")
+}
+
 model ExpenseLine {
-  id               String          @id @default(dbgenerated("uuidv7()")) @db.Uuid
-  voucherId        String          @map("voucher_id") @db.Uuid
-  lineNo           Int             @map("line_no")
+  id               String  @id @default(dbgenerated("uuidv7()")) @db.Uuid
+  voucherId        String  @map("voucher_id") @db.Uuid
+  lineNo           Int     @map("line_no")
   description      String
-  category         ExpenseCategory
-  amount           Decimal         @db.Decimal(14, 2)
-  otherExplanation String?         @map("other_explanation")
+  categoryId       String  @map("category_id") @db.Uuid
+  amount           Decimal @db.Decimal(14, 2)
+  otherExplanation String? @map("other_explanation")
 
-  // ck_other_requires_explanation (BR-007) is hand-written SQL — Prisma has no CHECK
-  // constraint attribute.
-  voucher ExpenseVoucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  // trg_expense_line_category_explanation enforces BR-007 from the selected category's
+  // requires_explanation metadata. Prisma cannot express that cross-table rule.
+  voucher  ExpenseVoucher  @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  category ExpenseCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
+  @@index([categoryId, voucherId], map: "ix_lines_category")
   @@map("expense_lines")
 }
 

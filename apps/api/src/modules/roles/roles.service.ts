@@ -8,7 +8,7 @@ import { RolesRepository } from "./roles.repository";
 // grants these to a role, but they gate nothing today. Same "documented, reviewed
 // exception list" shape as audit-coverage.spec.ts's EXEMPTIONS — if one of these is
 // ever wired up to a real route, remove it here rather than leaving it stale.
-const UNENFORCED_PERMISSIONS: ReadonlySet<string> = new Set(["category.manage"]);
+const UNENFORCED_PERMISSIONS: ReadonlySet<string> = new Set();
 
 @Injectable()
 export class RolesService {
