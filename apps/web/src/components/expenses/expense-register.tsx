@@ -1,6 +1,11 @@
 "use client";
 
-import type { ExpenseVoucher, OrganizationalUnit } from "@psh/contracts";
+import {
+  EXPENSE_ALL_UNITS,
+  type ExpenseListUnitScope,
+  type ExpenseRegisterVoucher,
+  type OrganizationalUnit,
+} from "@psh/contracts";
 import {
   Badge,
   Button,
@@ -34,7 +39,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../lib/api-client";
 
-// Matches ExpensesRepository.listVouchersForAccount's default `limit` — the controller
+// Matches ExpensesRepository.listVouchersForAccounts' default `limit` — the controller
 // doesn't expose a page-size query param, so this has to track that default rather
 // than being independently configurable.
 const PAGE_SIZE = 50;
@@ -50,14 +55,18 @@ interface RegisterFilters {
 type Cursor = { expenseDate: string; id: string };
 
 interface RegisterPage {
-  vouchers: ExpenseVoucher[];
+  vouchers: ExpenseRegisterVoucher[];
   nextCursor: Cursor | null;
 }
 
 // Keyset pagination (NFR-003) — the API's sort order is fixed (expense_date, id desc);
 // "Load more" advances the cursor rather than jumping to an arbitrary page number.
-async function fetchPage(unitId: string, filters: RegisterFilters, cursor?: Cursor): Promise<RegisterPage> {
-  const params = new URLSearchParams({ unitId });
+async function fetchPage(
+  unitScope: ExpenseListUnitScope,
+  filters: RegisterFilters,
+  cursor?: Cursor,
+): Promise<RegisterPage> {
+  const params = new URLSearchParams({ unitId: unitScope });
   if (filters.search) params.set("q", filters.search);
   if (filters.checked !== "all") params.set("checked", filters.checked);
   if (filters.category !== "ALL") params.set("category", filters.category);
@@ -67,17 +76,19 @@ async function fetchPage(unitId: string, filters: RegisterFilters, cursor?: Curs
     params.set("cursorDate", cursor.expenseDate);
     params.set("cursorId", cursor.id);
   }
-  const vouchers = await apiFetch<ExpenseVoucher[]>(`/expenses?${params.toString()}`);
+  const vouchers = await apiFetch<ExpenseRegisterVoucher[]>(`/expenses?${params.toString()}`);
   const last = vouchers.at(-1);
-  const nextCursor = vouchers.length === PAGE_SIZE && last ? { expenseDate: last.expenseDate, id: last.id } : null;
+  const nextCursor =
+    vouchers.length === PAGE_SIZE && last ? { expenseDate: last.expenseDate, id: last.id } : null;
   return { vouchers, nextCursor };
 }
 
-const columnHelper = createColumnHelper<ExpenseVoucher>();
+const columnHelper = createColumnHelper<ExpenseRegisterVoucher>();
 
 const columns = [
   columnHelper.accessor("expenseDate", { header: "Date" }),
   columnHelper.accessor("voucherNo", { header: "Voucher No." }),
+  columnHelper.accessor((row) => row.unit.code, { id: "unit", header: "Unit" }),
   columnHelper.accessor("vendorName", { header: "Vendor" }),
   columnHelper.display({
     id: "category",
@@ -105,12 +116,14 @@ const columns = [
   columnHelper.display({
     id: "state",
     header: "State",
-    cell: (info) => (info.row.original.state === "REVERSED" ? <Badge variant="negative">Reversed</Badge> : null),
+    cell: (info) =>
+      info.row.original.state === "REVERSED" ? <Badge variant="negative">Reversed</Badge> : null,
   }),
 ];
 
-export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
+export function ExpenseRegister({ unit }: { unit: OrganizationalUnit | null }) {
   const router = useRouter();
+  const unitScope: ExpenseListUnitScope = unit?.id ?? EXPENSE_ALL_UNITS;
   const [filters, setFilters] = useState<RegisterFilters>({
     search: "",
     checked: "all",
@@ -119,11 +132,13 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
     dateTo: "",
   });
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({});
+  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
+    unit: unit === null,
+  });
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
-    queryKey: ["expenses", unit.id, filters],
-    queryFn: ({ pageParam }: { pageParam?: Cursor }) => fetchPage(unit.id, filters, pageParam),
+    queryKey: ["expenses", unitScope, filters],
+    queryFn: ({ pageParam }: { pageParam?: Cursor }) => fetchPage(unitScope, filters, pageParam),
     initialPageParam: undefined as Cursor | undefined,
     getNextPageParam: (lastPage: RegisterPage) => lastPage.nextCursor ?? undefined,
   });
@@ -133,9 +148,14 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
   const columnsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    setColumnVisibility((current) => ({ ...current, unit: unit === null }));
+  }, [unit]);
+
+  useEffect(() => {
     if (!columnsOpen) return;
     function onClickOutside(event: MouseEvent): void {
-      if (columnsRef.current && !columnsRef.current.contains(event.target as Node)) setColumnsOpen(false);
+      if (columnsRef.current && !columnsRef.current.contains(event.target as Node))
+        setColumnsOpen(false);
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
@@ -156,7 +176,7 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
       <div>
         <h1 className="text-lg font-semibold text-ink">Expense Register</h1>
         <p className="text-sm text-ink-muted">
-          {unit.name} ({unit.code})
+          {unit ? `${unit.name} (${unit.code})` : "All petty-cash units"}
         </p>
       </div>
 
@@ -164,7 +184,10 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
         <div className="flex min-w-56 flex-1 flex-col gap-1.5">
           <Label htmlFor="expense-search">Search</Label>
           <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" aria-hidden />
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted"
+              aria-hidden
+            />
             <Input
               id="expense-search"
               aria-label="Search voucher, vendor, or justification"
@@ -200,7 +223,9 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
           <Label htmlFor="expense-checked">Status</Label>
           <Select
             value={filters.checked}
-            onValueChange={(value) => setFilters((prev) => ({ ...prev, checked: value as RegisterFilters["checked"] }))}
+            onValueChange={(value) =>
+              setFilters((prev) => ({ ...prev, checked: value as RegisterFilters["checked"] }))
+            }
           >
             <SelectTrigger id="expense-checked" aria-label="Checked status" className="w-44">
               <SelectValue />
@@ -255,8 +280,13 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
                   key={column.id}
                   className="flex cursor-pointer items-center gap-2 rounded-control px-2 py-1.5 text-sm text-ink hover:bg-interactive-surface"
                 >
-                  <Checkbox checked={column.getIsVisible()} onCheckedChange={() => column.toggleVisibility()} />
-                  {typeof column.columnDef.header === "string" ? column.columnDef.header : column.id}
+                  <Checkbox
+                    checked={column.getIsVisible()}
+                    onCheckedChange={() => column.toggleVisibility()}
+                  />
+                  {typeof column.columnDef.header === "string"
+                    ? column.columnDef.header
+                    : column.id}
                 </label>
               ))}
             </div>
@@ -278,9 +308,16 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
                     )}
                     onClick={header.column.getToggleSortingHandler()}
                   >
-                    <div className={cn("flex items-center gap-1", header.column.id === "billTotal" && "justify-end")}>
+                    <div
+                      className={cn(
+                        "flex items-center gap-1",
+                        header.column.id === "billTotal" && "justify-end",
+                      )}
+                    >
                       {flexRender(header.column.columnDef.header, header.getContext())}
-                      {header.column.getIsSorted() === "asc" ? <ChevronUp className="h-3 w-3" aria-hidden /> : null}
+                      {header.column.getIsSorted() === "asc" ? (
+                        <ChevronUp className="h-3 w-3" aria-hidden />
+                      ) : null}
                       {header.column.getIsSorted() === "desc" ? (
                         <ChevronDown className="h-3 w-3" aria-hidden />
                       ) : null}
@@ -312,7 +349,10 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit }) {
                     {row.getVisibleCells().map((cell) => (
                       <td
                         key={cell.id}
-                        className={cn("px-3 py-2.5 text-ink", cell.column.id === "billTotal" && "text-right tabular-nums")}
+                        className={cn(
+                          "px-3 py-2.5 text-ink",
+                          cell.column.id === "billTotal" && "text-right tabular-nums",
+                        )}
                       >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>

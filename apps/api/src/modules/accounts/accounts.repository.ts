@@ -20,6 +20,10 @@ export class AccountsRepository {
     return this.prisma.pettyCashAccount.findUnique({ where: { id } });
   }
 
+  async listAll(): Promise<PettyCashAccount[]> {
+    return this.prisma.pettyCashAccount.findMany({ orderBy: { unitId: "asc" } });
+  }
+
   async create(unitId: string, client: Client = this.prisma): Promise<PettyCashAccount> {
     return client.pettyCashAccount.create({ data: { unitId } });
   }

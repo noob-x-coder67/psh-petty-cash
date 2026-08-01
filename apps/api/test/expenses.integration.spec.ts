@@ -344,6 +344,64 @@ describe("reversal (BR-020, FR-EXP-017) — no hard deletion, auditable compensa
   });
 });
 
+describe("Expense Register aggregate unit scope", () => {
+  it("returns an explicit 403 when a Center User requests unitId=all or omits unitId", async () => {
+    const cookies = await loginAs("user.sohawa@psh.local");
+
+    await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: "all" })
+      .set("Cookie", cookies)
+      .expect(403);
+
+    await request(app.getHttpServer()).get("/expenses").set("Cookie", cookies).expect(403);
+  });
+
+  it.each(["financeofficer@psh.local", "auditor@psh.local"])(
+    "does not extend aggregate Expenses access to %s",
+    async (email) => {
+      const cookies = await loginAs(email);
+      await request(app.getHttpServer())
+        .get("/expenses")
+        .query({ unitId: "all" })
+        .set("Cookie", cookies)
+        .expect(403);
+    },
+  );
+
+  it("returns rows from multiple units, with unit identity, for Finance Manager and Super Admin", async () => {
+    const ccs = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
+    const sukkur = await prisma.organizationalUnit.findUniqueOrThrow({
+      where: { code: "PSH-SUK" },
+    });
+    const marker = `AggregateRegister-${Date.now()}`;
+
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", await loginAs("user.sohawa@psh.local"))
+      .send(baseVoucherBody(ccs.id, { vendorName: marker }))
+      .expect(201);
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", await loginAs("user.sukkur@psh.local"))
+      .send(baseVoucherBody(sukkur.id, { vendorName: marker }))
+      .expect(201);
+
+    for (const email of ["financemanager@psh.local", "superadmin@psh.local"]) {
+      const response = await request(app.getHttpServer())
+        .get("/expenses")
+        .query({ unitId: "all", q: marker })
+        .set("Cookie", await loginAs(email))
+        .expect(200);
+
+      expect(response.body).toHaveLength(2);
+      expect(
+        new Set(response.body.map((row: { unit: { code: string } }) => row.unit.code)),
+      ).toEqual(new Set(["PSH-CCS", "PSH-SUK"]));
+    }
+  });
+});
+
 describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
   it("global search matches vendor name, voucher number, or justification", async () => {
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });

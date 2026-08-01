@@ -3,11 +3,14 @@ import {
   BulkCheckRequestSchema,
   CreateVoucherRequestSchema,
   EditVoucherRequestSchema,
+  EXPENSE_ALL_UNITS,
+  ExpenseListUnitScopeSchema,
   ReverseVoucherRequestSchema,
   UncheckVoucherRequestSchema,
   type BulkCheckRequest,
   type CreateVoucherRequest,
   type EditVoucherRequest,
+  type ExpenseListUnitScope,
   type ReverseVoucherRequest,
   type UncheckVoucherRequest,
 } from "@psh/contracts";
@@ -20,7 +23,11 @@ import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import type { CreateVoucherResult } from "./expenses.service";
 import { ExpensesService } from "./expenses.service";
-import type { ExpenseVoucherWithLines, VoucherListFilters } from "./expenses.repository";
+import type {
+  ExpenseVoucherRegisterRow,
+  ExpenseVoucherWithLines,
+  VoucherListFilters,
+} from "./expenses.repository";
 
 @Controller("expenses")
 export class ExpensesController {
@@ -39,9 +46,13 @@ export class ExpensesController {
 
   @Get()
   @RequiresPermission("dashboard.view_own_unit")
-  @RequiresUnitScope("derived")
+  @RequiresUnitScope({
+    source: "query.unitId",
+    allowAll: { value: EXPENSE_ALL_UNITS, permission: "expense.view_all_units" },
+  })
   async list(
-    @Query("unitId") unitId: string,
+    @Query("unitId", new ZodValidationPipe(ExpenseListUnitScopeSchema))
+    unitId: ExpenseListUnitScope,
     @Query("cursorDate") cursorDate: string | undefined,
     @Query("cursorId") cursorId: string | undefined,
     @Query("q") search: string | undefined,
@@ -50,12 +61,14 @@ export class ExpensesController {
     @Query("dateFrom") dateFrom: string | undefined,
     @Query("dateTo") dateTo: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
-  ): Promise<ExpenseVoucherWithLines[]> {
+  ): Promise<ExpenseVoucherRegisterRow[]> {
     const filters: VoucherListFilters = {
       search: search || undefined,
       checked: checked === "true" ? true : checked === "false" ? false : undefined,
       category:
-        category === "BUILDING" || category === "VEHICLE" || category === "OTHER" ? category : undefined,
+        category === "BUILDING" || category === "VEHICLE" || category === "OTHER"
+          ? category
+          : undefined,
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
     };
@@ -105,7 +118,10 @@ export class ExpensesController {
   @RequiresPermission("receipt.check")
   @RequiresUnitScope("derived")
   @Audited({ action: "RECEIPT_CHECK", entityType: "expense_vouchers" })
-  async check(@Param("id") id: string, @CurrentUser() user: AuthenticatedUser): Promise<ExpenseVoucher> {
+  async check(
+    @Param("id") id: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ExpenseVoucher> {
     return this.expensesService.checkVoucher(id, user);
   }
 

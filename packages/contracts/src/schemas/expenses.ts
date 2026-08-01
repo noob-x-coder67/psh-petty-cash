@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { AttachmentSchema } from "./attachments.js";
 
-const decimalString = z.string().regex(/^\d+(\.\d{1,2})?$/, "must be a decimal amount with up to 2 places");
+const decimalString = z
+  .string()
+  .regex(/^\d+(\.\d{1,2})?$/, "must be a decimal amount with up to 2 places");
 
 // HTML <input type="date"> emits "" when left blank, not undefined — z.iso.date().optional()
 // only ever treats undefined as "not provided", so a genuinely optional date field (bill
@@ -15,7 +17,9 @@ const decimalString = z.string().regex(/^\d+(\.\d{1,2})?$/, "must be a decimal a
 const optionalIsoDate = z
   .string()
   .optional()
-  .refine((value) => !value || z.iso.date().safeParse(value).success, { message: "Invalid ISO date" });
+  .refine((value) => !value || z.iso.date().safeParse(value).success, {
+    message: "Invalid ISO date",
+  });
 
 export const ExpenseLineInputSchema = z.object({
   description: z.string().min(1),
@@ -62,6 +66,16 @@ export const CreateVoucherRequestSchema = z
     });
   });
 export type CreateVoucherRequest = z.infer<typeof CreateVoucherRequestSchema>;
+
+// GET /expenses always carries an explicit scope. The aggregate sentinel is never an
+// omitted query value: UnitScopeGuard treats a missing unitId as forbidden, and permits
+// this literal only on routes that opt into aggregate access server-side.
+export const EXPENSE_ALL_UNITS = "all" as const;
+export const ExpenseListUnitScopeSchema = z.union([
+  z.string().uuid(),
+  z.literal(EXPENSE_ALL_UNITS),
+]);
+export type ExpenseListUnitScope = z.infer<typeof ExpenseListUnitScopeSchema>;
 
 // Only non-financial fields are directly editable (BR-020: fix amounts via reversal +
 // re-entry, a compensating action, never an in-place edit of a posted total).
@@ -118,6 +132,17 @@ export const ExpenseVoucherSchema = z.object({
   attachments: z.array(AttachmentSchema),
 });
 export type ExpenseVoucher = z.infer<typeof ExpenseVoucherSchema>;
+
+// List-only enrichment. Create/detail payloads keep ExpenseVoucherSchema unchanged;
+// register rows need unit identity so an aggregate result is not ambiguous.
+export const ExpenseRegisterVoucherSchema = ExpenseVoucherSchema.extend({
+  unit: z.object({
+    id: z.string().uuid(),
+    code: z.string(),
+    name: z.string(),
+  }),
+});
+export type ExpenseRegisterVoucher = z.infer<typeof ExpenseRegisterVoucherSchema>;
 
 export const CreateVoucherResultSchema = z.object({
   voucher: ExpenseVoucherSchema,

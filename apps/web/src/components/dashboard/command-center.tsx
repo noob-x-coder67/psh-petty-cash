@@ -57,7 +57,7 @@ export function CommandCenter({ data, asOf }: { data: DashboardFinanceResponse; 
             value={<Money value={cashIssued} />}
             icon={ArrowDownToLine}
             accent="primary"
-            tooltip="Total replenishments confirmed to petty-cash accounts this period."
+            tooltip="Total allocations and replenishments confirmed to petty-cash accounts this period, across every unit."
           />
         </motion.div>
         <motion.div variants={revealVariants}>

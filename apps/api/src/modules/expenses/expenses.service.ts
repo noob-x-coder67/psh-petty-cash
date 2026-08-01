@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
+import { EXPENSE_ALL_UNITS, type ExpenseListUnitScope } from "@psh/contracts";
 import { Prisma, type ExpenseVoucher } from "@prisma/client";
 import { AuditLogRepository } from "../../common/audit/audit-log.repository";
 import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repository";
@@ -14,6 +15,7 @@ import { AccountsRepository } from "../accounts/accounts.repository";
 import { MonthCloseRepository } from "../month-close/month-close.repository";
 import {
   ExpensesRepository,
+  type ExpenseVoucherRegisterRow,
   type ExpenseVoucherWithLines,
   type VoucherListFilters,
 } from "./expenses.repository";
@@ -177,7 +179,11 @@ export class ExpensesService {
         createdBy: input.enteredBy.id,
       });
 
-      const withBalance = await this.expensesRepository.setBalanceAfter(created.id, ledgerEntry.balanceAfter, tx);
+      const withBalance = await this.expensesRepository.setBalanceAfter(
+        created.id,
+        ledgerEntry.balanceAfter,
+        tx,
+      );
 
       await this.auditLogRepository.record(tx, {
         actorId: input.enteredBy.id,
@@ -199,7 +205,10 @@ export class ExpensesService {
     };
   }
 
-  async getVoucherForUser(voucherId: string, user: AuthenticatedUser): Promise<ExpenseVoucherWithLines> {
+  async getVoucherForUser(
+    voucherId: string,
+    user: AuthenticatedUser,
+  ): Promise<ExpenseVoucherWithLines> {
     const voucher = await this.expensesRepository.findVoucherById(voucherId);
     if (!voucher) {
       throw new NotFoundException(`Voucher ${voucherId} not found`);
@@ -209,20 +218,35 @@ export class ExpensesService {
   }
 
   async listVouchersForUser(
-    unitId: string,
+    unitScope: ExpenseListUnitScope,
     user: AuthenticatedUser,
     filters: VoucherListFilters,
     cursor?: { expenseDate: string; id: string },
-  ): Promise<ExpenseVoucherWithLines[]> {
-    if (!user.unitScope.all && !user.unitScope.unitIds.includes(unitId)) {
+  ): Promise<ExpenseVoucherRegisterRow[]> {
+    if (unitScope === EXPENSE_ALL_UNITS) {
+      // Defense in depth behind UnitScopeGuard. Both conditions are intentional:
+      // Finance Officer/Auditor have broad scope for existing per-unit reads, but the
+      // new aggregate Expenses capability belongs only to roles granted this key.
+      if (!user.unitScope.all || !user.permissionKeys.includes("expense.view_all_units")) {
+        throw new ForbiddenException("All-units expense access is not permitted");
+      }
+      const accounts = await this.accountsRepository.listAll();
+      return this.expensesRepository.listVouchersForAccounts(
+        accounts.map((account) => account.id),
+        filters,
+        cursor ? { expenseDate: new Date(cursor.expenseDate), id: cursor.id } : undefined,
+      );
+    }
+
+    if (!user.unitScope.all && !user.unitScope.unitIds.includes(unitScope)) {
       throw new ForbiddenException("Unit is outside your authorized scope");
     }
-    const account = await this.accountsRepository.findByUnitId(unitId);
+    const account = await this.accountsRepository.findByUnitId(unitScope);
     if (!account) {
       return [];
     }
-    return this.expensesRepository.listVouchersForAccount(
-      account.id,
+    return this.expensesRepository.listVouchersForAccounts(
+      [account.id],
       filters,
       cursor ? { expenseDate: new Date(cursor.expenseDate), id: cursor.id } : undefined,
     );
@@ -244,11 +268,19 @@ export class ExpensesService {
         // input.billDate === "" means the picker was cleared, not "leave unchanged" — only
         // an omitted (undefined) billDate means that. new Date("") is an Invalid Date, so
         // an explicit "" must map to null (clearing the stored date), not a bad Date object.
-        ...(input.billDate !== undefined && { billDate: input.billDate ? new Date(input.billDate) : null }),
+        ...(input.billDate !== undefined && {
+          billDate: input.billDate ? new Date(input.billDate) : null,
+        }),
         ...(input.justification !== undefined && { justification: input.justification }),
-        ...(input.missingBillReason !== undefined && { missingBillReason: input.missingBillReason }),
+        ...(input.missingBillReason !== undefined && {
+          missingBillReason: input.missingBillReason,
+        }),
       };
-      const updated = await this.expensesRepository.updateNonFinancialFields(input.voucherId, fields, tx);
+      const updated = await this.expensesRepository.updateNonFinancialFields(
+        input.voucherId,
+        fields,
+        tx,
+      );
 
       await this.auditLogRepository.record(tx, {
         actorId: input.actor.id,
@@ -343,7 +375,11 @@ export class ExpensesService {
       });
 
       await this.expensesRepository.setBalanceAfter(reversal.id, reversalEntry.balanceAfter, tx);
-      const updatedOriginal = await this.expensesRepository.markReversed(original.id, reversal.id, tx);
+      const updatedOriginal = await this.expensesRepository.markReversed(
+        original.id,
+        reversal.id,
+        tx,
+      );
 
       await this.auditLogRepository.record(tx, {
         actorId: input.actor.id,
@@ -374,7 +410,10 @@ export class ExpensesService {
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await this.expensesRepository.markChecked(voucherId, actor.id, tx);
-      await this.expensesRepository.createCheckEvent({ voucherId, action: "CHECKED", actorId: actor.id }, tx);
+      await this.expensesRepository.createCheckEvent(
+        { voucherId, action: "CHECKED", actorId: actor.id },
+        tx,
+      );
       await this.auditLogRepository.record(tx, {
         actorId: actor.id,
         actorRole: actor.roleKeys[0] ?? null,
@@ -390,7 +429,11 @@ export class ExpensesService {
   }
 
   // FR-DOC-010: reverting to Unchecked requires a mandatory reason.
-  async uncheckVoucher(voucherId: string, reason: string, actor: AuthenticatedUser): Promise<ExpenseVoucher> {
+  async uncheckVoucher(
+    voucherId: string,
+    reason: string,
+    actor: AuthenticatedUser,
+  ): Promise<ExpenseVoucher> {
     const voucher = await this.expensesRepository.findVoucherById(voucherId);
     if (!voucher) {
       throw new NotFoundException(`Voucher ${voucherId} not found`);
@@ -458,10 +501,19 @@ export class ExpensesService {
   // to expenseDate one line later for voucher numbering (expenseDate is a DATE column
   // value with no time component, so no Asia/Karachi conversion applies here — that's
   // only needed when deriving a period from "now", not from an already-a-DATE column).
-  private async assertPeriodNotClosed(accountId: string, expenseDate: Date, tx: Prisma.TransactionClient): Promise<void> {
+  private async assertPeriodNotClosed(
+    accountId: string,
+    expenseDate: Date,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
     const periodYear = expenseDate.getUTCFullYear();
     const periodMonth = expenseDate.getUTCMonth() + 1;
-    const closing = await this.monthCloseRepository.findClosing(accountId, periodYear, periodMonth, tx);
+    const closing = await this.monthCloseRepository.findClosing(
+      accountId,
+      periodYear,
+      periodMonth,
+      tx,
+    );
     if (closing?.status === "CLOSED") {
       throw new ConflictException(
         `Cannot create a voucher in ${periodYear}-${String(periodMonth).padStart(2, "0")} — this period is closed. Reopen the month first.`,

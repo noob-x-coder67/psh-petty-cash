@@ -1,6 +1,6 @@
 "use client";
 
-import type { AuthenticatedUser, OrganizationalUnit } from "@psh/contracts";
+import { EXPENSE_ALL_UNITS, type AuthenticatedUser, type OrganizationalUnit } from "@psh/contracts";
 import {
   Button,
   cn,
@@ -17,6 +17,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Bell, Building2, Calendar, Search } from "lucide-react";
 import Image from "next/image";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api-client";
 import { useUnitScope } from "../../lib/use-unit-scope";
@@ -60,9 +61,26 @@ export function Masthead({ user, onOpenCommandPalette }: MastheadProps) {
     queryFn: () => apiFetch<OrganizationalUnit[]>("/units"),
   });
   const { unitCode, setUnitCode } = useUnitScope();
+  const pathname = usePathname();
   const environment = process.env.NEXT_PUBLIC_APP_ENV;
   const envBadge = environment && environment !== "production" ? environment : null;
   const scrolled = useScrolled();
+  const isOverview = pathname === "/overview";
+  const isExpenseRegister = pathname === "/expenses";
+  const usesMastheadUnitScope =
+    isExpenseRegister ||
+    pathname === "/cash-flow" ||
+    pathname === "/month-close" ||
+    pathname === "/my-unit" ||
+    pathname === "/expenses/new";
+  const scopedUnits = units?.filter((unit) => unit.pettyCashEnabled);
+  const canViewAllExpenses =
+    isExpenseRegister && user.permissionKeys.includes("expense.view_all_units");
+  const selectedUnitCode = scopedUnits?.some((unit) => unit.code === unitCode) ? unitCode : null;
+  const selectedScope =
+    canViewAllExpenses && !unitCode
+      ? EXPENSE_ALL_UNITS
+      : (selectedUnitCode ?? scopedUnits?.[0]?.code ?? "");
 
   return (
     <header
@@ -93,16 +111,26 @@ export function Masthead({ user, onOpenCommandPalette }: MastheadProps) {
               </span>
             ) : null}
           </span>
-          {!scrolled ? <span className="text-[11px] text-ink-muted">Pakistan Sweet Home</span> : null}
+          {!scrolled ? (
+            <span className="text-[11px] text-ink-muted">Pakistan Sweet Home</span>
+          ) : null}
         </div>
       </div>
 
       <div className="hidden h-6 w-px bg-border lg:block" aria-hidden />
 
-      {units && units.length > 1 ? (
+      {isOverview ? (
         <div className="hidden items-center gap-1.5 lg:flex">
           <Building2 className="h-4 w-4 text-ink-muted" aria-hidden />
-          <Select value={unitCode ?? units[0]?.code ?? ""} onValueChange={setUnitCode}>
+          <span className="text-sm text-ink-muted">All units</span>
+        </div>
+      ) : usesMastheadUnitScope && scopedUnits && (scopedUnits.length > 1 || canViewAllExpenses) ? (
+        <div className="hidden items-center gap-1.5 lg:flex">
+          <Building2 className="h-4 w-4 text-ink-muted" aria-hidden />
+          <Select
+            value={selectedScope}
+            onValueChange={(value) => setUnitCode(value === EXPENSE_ALL_UNITS ? null : value)}
+          >
             <SelectTrigger
               aria-label="Unit"
               className="w-40 max-w-56 border-transparent bg-transparent hover:bg-interactive-surface xl:w-56"
@@ -110,7 +138,10 @@ export function Masthead({ user, onOpenCommandPalette }: MastheadProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {units.map((unit) => (
+              {canViewAllExpenses ? (
+                <SelectItem value={EXPENSE_ALL_UNITS}>All units</SelectItem>
+              ) : null}
+              {scopedUnits.map((unit) => (
                 <SelectItem key={unit.id} value={unit.code}>
                   {unit.code}
                 </SelectItem>
@@ -118,10 +149,10 @@ export function Masthead({ user, onOpenCommandPalette }: MastheadProps) {
             </SelectContent>
           </Select>
         </div>
-      ) : units?.[0] ? (
+      ) : usesMastheadUnitScope && scopedUnits?.[0] ? (
         <div className="hidden items-center gap-1.5 lg:flex">
           <Building2 className="h-4 w-4 text-ink-muted" aria-hidden />
-          <span className="text-sm text-ink-muted">{units[0].name}</span>
+          <span className="text-sm text-ink-muted">{scopedUnits[0].name}</span>
         </div>
       ) : null}
 
@@ -140,7 +171,9 @@ export function Masthead({ user, onOpenCommandPalette }: MastheadProps) {
         >
           <Search className="h-4 w-4" aria-hidden />
           <span className="hidden items-center gap-0.5 text-xs md:flex">
-            <kbd className="rounded border border-border bg-surface-0 px-1 py-0.5 font-sans">⌘K</kbd>
+            <kbd className="rounded border border-border bg-surface-0 px-1 py-0.5 font-sans">
+              ⌘K
+            </kbd>
           </span>
         </Button>
         <Tooltip>

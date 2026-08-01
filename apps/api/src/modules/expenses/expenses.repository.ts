@@ -62,6 +62,24 @@ export type ExpenseVoucherWithLines = Prisma.ExpenseVoucherGetPayload<{
   include: { lines: true; attachments: typeof ATTACHMENTS_INCLUDE };
 }>;
 
+const REGISTER_INCLUDE = {
+  lines: true,
+  attachments: ATTACHMENTS_INCLUDE,
+  account: {
+    select: {
+      unit: { select: { id: true, code: true, name: true } },
+    },
+  },
+} satisfies Prisma.ExpenseVoucherInclude;
+
+type ExpenseVoucherRegisterRecord = Prisma.ExpenseVoucherGetPayload<{
+  include: typeof REGISTER_INCLUDE;
+}>;
+
+export type ExpenseVoucherRegisterRow = ExpenseVoucherWithLines & {
+  unit: ExpenseVoucherRegisterRecord["account"]["unit"];
+};
+
 @Injectable()
 export class ExpensesRepository {
   constructor(private readonly prisma: PrismaService) {}
@@ -81,12 +99,15 @@ export class ExpensesRepository {
    * needs real ranked full-text search across a much larger dataset). Both OR-based
    * conditions (search, keyset cursor) must combine under AND — object-literal spread
    * would let the second "OR" key silently clobber the first. */
-  async listVouchersForAccount(
-    accountId: string,
+  async listVouchersForAccounts(
+    accountIds: string[],
     filters: VoucherListFilters = {},
     cursor?: { expenseDate: Date; id: string },
     limit = 50,
-  ): Promise<ExpenseVoucherWithLines[]> {
+  ): Promise<ExpenseVoucherRegisterRow[]> {
+    if (accountIds.length === 0) {
+      return [];
+    }
     const andConditions: Prisma.ExpenseVoucherWhereInput[] = [];
     if (filters.search) {
       andConditions.push({
@@ -106,9 +127,9 @@ export class ExpensesRepository {
       });
     }
 
-    return this.prisma.expenseVoucher.findMany({
+    const records: ExpenseVoucherRegisterRecord[] = await this.prisma.expenseVoucher.findMany({
       where: {
-        accountId,
+        accountId: { in: accountIds },
         state: "ACTIVE",
         ...(filters.checked !== undefined
           ? { checkedAt: filters.checked ? { not: null } : null }
@@ -126,8 +147,10 @@ export class ExpensesRepository {
       },
       orderBy: [{ expenseDate: "desc" }, { id: "desc" }],
       take: limit,
-      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
+      include: REGISTER_INCLUDE,
     });
+
+    return records.map(({ account, ...voucher }) => ({ ...voucher, unit: account.unit }));
   }
 
   async findAccountUnitCode(accountId: string): Promise<string | null> {
@@ -149,7 +172,11 @@ export class ExpensesRepository {
     });
   }
 
-  async incrementVoucherCounter(accountId: string, year: number, client: Client = this.prisma): Promise<number> {
+  async incrementVoucherCounter(
+    accountId: string,
+    year: number,
+    client: Client = this.prisma,
+  ): Promise<number> {
     const counter = await client.voucherCounter.upsert({
       where: { accountId_year: { accountId, year } },
       create: { accountId, year, lastSeq: 1 },
@@ -158,7 +185,10 @@ export class ExpensesRepository {
     return counter.lastSeq;
   }
 
-  async createVoucher(params: CreateVoucherParams, client: Client = this.prisma): Promise<ExpenseVoucher> {
+  async createVoucher(
+    params: CreateVoucherParams,
+    client: Client = this.prisma,
+  ): Promise<ExpenseVoucher> {
     return client.expenseVoucher.create({ data: params });
   }
 
@@ -215,7 +245,11 @@ export class ExpensesRepository {
     });
   }
 
-  async markChecked(voucherId: string, checkedBy: string, client: Client = this.prisma): Promise<ExpenseVoucher> {
+  async markChecked(
+    voucherId: string,
+    checkedBy: string,
+    client: Client = this.prisma,
+  ): Promise<ExpenseVoucher> {
     return client.expenseVoucher.update({
       where: { id: voucherId },
       data: { checkedBy, checkedAt: new Date() },
@@ -230,7 +264,12 @@ export class ExpensesRepository {
   }
 
   async createCheckEvent(
-    params: { voucherId: string; action: "CHECKED" | "UNCHECKED"; actorId: string; reason?: string },
+    params: {
+      voucherId: string;
+      action: "CHECKED" | "UNCHECKED";
+      actorId: string;
+      reason?: string;
+    },
     client: Client = this.prisma,
   ): Promise<void> {
     await client.receiptCheckEvent.create({ data: params });
