@@ -3,7 +3,7 @@ import { Test } from "@nestjs/testing";
 import { Prisma } from "@prisma/client";
 import cookieParser from "cookie-parser";
 import request from "supertest";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { DEMO_PASSWORD } from "../../../prisma/seed-data";
 import { AppModule } from "../src/app.module";
 import { PrismaService } from "../src/common/prisma/prisma.service";
@@ -15,6 +15,7 @@ import { PrismaService } from "../src/common/prisma/prisma.service";
 
 let app: INestApplication;
 let prisma: PrismaService;
+let buildingCategoryId = "";
 const sessions = new Map<string, string[]>();
 
 function extractCookies(res: request.Response): string[] {
@@ -42,10 +43,19 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
+  buildingCategoryId = (
+    await prisma.expenseCategory.findUniqueOrThrow({
+      where: { name: "Repair & Maintenance: Building" },
+    })
+  ).id;
 });
 
 afterAll(async () => {
   await app.close();
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("GET /dashboard/finance (dashboard.view_all)", () => {
@@ -108,6 +118,11 @@ describe("GET /dashboard/unit/:id (dashboard.view_own_unit)", () => {
 // from the cross-period-boundary case (which is a different, correct behavior).
 describe("GET /dashboard/unit/:id — spent (this period) nets out reversed vouchers", () => {
   it("a reversed voucher's amount drops back out of period.spent", async () => {
+    // Keep the application clock in the same accounting period as this deliberately
+    // fixed fixture date. Otherwise the assertion changes meaning at month rollover.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-07-30T12:00:00+05:00"));
+
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
     const financeManagerCookies = await loginAs("financemanager@psh.local");
 
@@ -128,7 +143,7 @@ describe("GET /dashboard/unit/:id — spent (this period) nets out reversed vouc
         justification: "dashboard.integration.spec.ts net-spend fixture",
         billTotal: "60.00",
         hasBill: true,
-        lines: [{ description: "Supplies", category: "BUILDING", amount: "60.00" }],
+        lines: [{ description: "Supplies", categoryId: buildingCategoryId, amount: "60.00" }],
       })
       .expect(201);
 

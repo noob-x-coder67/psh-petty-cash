@@ -1,8 +1,13 @@
 import { Injectable } from "@nestjs/common";
-import type { ExpenseCategory, Prisma } from "@prisma/client";
+import { Prisma, type ExpenseCategory } from "@prisma/client";
 import { PrismaService } from "../../common/prisma/prisma.service";
 
 type Client = PrismaService | Prisma.TransactionClient;
+
+export type ExpenseCategoryRule = Pick<
+  ExpenseCategory,
+  "id" | "name" | "requiresExplanation" | "isActive"
+>;
 
 @Injectable()
 export class CategoriesRepository {
@@ -21,6 +26,28 @@ export class CategoriesRepository {
 
   async findByName(name: string, client: Client = this.prisma): Promise<ExpenseCategory | null> {
     return client.expenseCategory.findUnique({ where: { name } });
+  }
+
+  async lockRulesForExpenseCreation(
+    ids: string[],
+    client: Prisma.TransactionClient,
+  ): Promise<ExpenseCategoryRule[]> {
+    if (ids.length === 0) return [];
+
+    // A SHARE row lock keeps category activation/rule metadata stable until the voucher
+    // commits. Admin category mutations take a conflicting lock, closing the check/write
+    // race without serializing expense creators against one another.
+    const idList = Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`));
+    return client.$queryRaw<ExpenseCategoryRule[]>(Prisma.sql`
+      SELECT
+        id,
+        name,
+        requires_explanation AS "requiresExplanation",
+        is_active AS "isActive"
+      FROM expense_categories
+      WHERE id IN (${idList})
+      FOR SHARE
+    `);
   }
 
   async lockOrdering(client: Prisma.TransactionClient): Promise<void> {

@@ -2,6 +2,7 @@
 
 import {
   EXPENSE_ALL_UNITS,
+  type ExpenseCategory,
   type ExpenseListUnitScope,
   type ExpenseRegisterVoucher,
   type OrganizationalUnit,
@@ -24,7 +25,7 @@ import {
   Skeleton,
   cn,
 } from "@psh/ui";
-import { useInfiniteQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import {
   createColumnHelper,
   flexRender,
@@ -47,7 +48,7 @@ const PAGE_SIZE = 50;
 interface RegisterFilters {
   search: string;
   checked: "all" | "true" | "false";
-  category: "ALL" | "BUILDING" | "VEHICLE" | "OTHER";
+  categoryId: "ALL" | string;
   dateFrom: string;
   dateTo: string;
 }
@@ -69,7 +70,7 @@ async function fetchPage(
   const params = new URLSearchParams({ unitId: unitScope });
   if (filters.search) params.set("q", filters.search);
   if (filters.checked !== "all") params.set("checked", filters.checked);
-  if (filters.category !== "ALL") params.set("category", filters.category);
+  if (filters.categoryId !== "ALL") params.set("categoryId", filters.categoryId);
   if (filters.dateFrom) params.set("dateFrom", filters.dateFrom);
   if (filters.dateTo) params.set("dateTo", filters.dateTo);
   if (cursor) {
@@ -94,11 +95,13 @@ const columns = [
     id: "category",
     header: "Category",
     cell: (info) => {
-      const categories = Array.from(new Set(info.row.original.lines.map((line) => line.category)));
+      const categories = Array.from(
+        new Map(info.row.original.lines.map((line) => [line.category.id, line.category])).values(),
+      );
       return (
         <div className="flex gap-1">
           {categories.map((category) => (
-            <CategoryChip key={category} category={category} />
+            <CategoryChip key={category.id} category={category.name} />
           ))}
         </div>
       );
@@ -127,13 +130,17 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit | null }) {
   const [filters, setFilters] = useState<RegisterFilters>({
     search: "",
     checked: "all",
-    category: "ALL",
+    categoryId: "ALL",
     dateFrom: "",
     dateTo: "",
   });
   const [sorting, setSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({
     unit: unit === null,
+  });
+  const { data: categories = [] } = useQuery({
+    queryKey: ["expense-categories", "all"],
+    queryFn: () => apiFetch<ExpenseCategory[]>("/expense-categories?includeInactive=true"),
   });
 
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } = useInfiniteQuery({
@@ -202,9 +209,9 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit | null }) {
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="expense-category">Category</Label>
           <Select
-            value={filters.category}
+            value={filters.categoryId}
             onValueChange={(value) =>
-              setFilters((prev) => ({ ...prev, category: value as RegisterFilters["category"] }))
+              setFilters((prev) => ({ ...prev, categoryId: value }))
             }
           >
             <SelectTrigger id="expense-category" aria-label="Category" className="w-40">
@@ -212,9 +219,12 @@ export function ExpenseRegister({ unit }: { unit: OrganizationalUnit | null }) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All categories</SelectItem>
-              <SelectItem value="BUILDING">Building</SelectItem>
-              <SelectItem value="VEHICLE">Vehicle</SelectItem>
-              <SelectItem value="OTHER">Other</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.name}
+                  {category.isActive ? "" : " (Inactive)"}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

@@ -1,15 +1,17 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query } from "@nestjs/common";
 import {
   BulkCheckRequestSchema,
   CreateVoucherRequestSchema,
   EditVoucherRequestSchema,
   EXPENSE_ALL_UNITS,
+  ExpenseCategoryFilterSchema,
   ExpenseListUnitScopeSchema,
   ReverseVoucherRequestSchema,
   UncheckVoucherRequestSchema,
   type BulkCheckRequest,
   type CreateVoucherRequest,
   type EditVoucherRequest,
+  type ExpenseCategoryFilter,
   type ExpenseListUnitScope,
   type ReverseVoucherRequest,
   type UncheckVoucherRequest,
@@ -57,18 +59,20 @@ export class ExpensesController {
     @Query("cursorId") cursorId: string | undefined,
     @Query("q") search: string | undefined,
     @Query("checked") checked: string | undefined,
-    @Query("category") category: string | undefined,
+    @Query("categoryId", new ZodValidationPipe(ExpenseCategoryFilterSchema))
+    categoryId: ExpenseCategoryFilter,
+    @Query("category") legacyCategory: string | undefined,
     @Query("dateFrom") dateFrom: string | undefined,
     @Query("dateTo") dateTo: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ExpenseVoucherRegisterRow[]> {
+    if (legacyCategory !== undefined) {
+      throw new BadRequestException("The category filter has been replaced by categoryId");
+    }
     const filters: VoucherListFilters = {
       search: search || undefined,
       checked: checked === "true" ? true : checked === "false" ? false : undefined,
-      category:
-        category === "BUILDING" || category === "VEHICLE" || category === "OTHER"
-          ? category
-          : undefined,
+      categoryId,
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
     };

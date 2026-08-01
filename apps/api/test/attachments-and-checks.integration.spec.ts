@@ -18,6 +18,7 @@ import { PrismaService } from "../src/common/prisma/prisma.service";
 let app: INestApplication;
 let prisma: PrismaService;
 let attachmentsService: AttachmentsService;
+let buildingCategoryId = "";
 const sessions = new Map<string, string[]>();
 
 function extractCookies(res: request.Response): string[] {
@@ -46,6 +47,11 @@ beforeAll(async () => {
   await app.init();
   prisma = app.get(PrismaService);
   attachmentsService = app.get(AttachmentsService);
+  buildingCategoryId = (
+    await prisma.expenseCategory.findUniqueOrThrow({
+      where: { name: "Repair & Maintenance: Building" },
+    })
+  ).id;
 });
 
 afterAll(async () => {
@@ -64,7 +70,7 @@ async function createVoucher(unitCode: string, cookies: string[]) {
       justification: "Testing attachment and check behaviour",
       billTotal: "50.00",
       hasBill: true,
-      lines: [{ description: "Item", category: "BUILDING", amount: "50.00" }],
+      lines: [{ description: "Item", categoryId: buildingCategoryId, amount: "50.00" }],
     })
     .expect(201);
   return res.body.voucher as { id: string };

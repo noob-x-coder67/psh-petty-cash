@@ -12,6 +12,7 @@ import { LedgerPostingRepository } from "../../common/ledger/ledger-posting.repo
 import { PrismaService } from "../../common/prisma/prisma.service";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { AccountsRepository } from "../accounts/accounts.repository";
+import { CategoriesRepository } from "../categories/categories.repository";
 import { MonthCloseRepository } from "../month-close/month-close.repository";
 import {
   ExpensesRepository,
@@ -23,7 +24,7 @@ import { isBackdated } from "./expenses.rules";
 
 export interface CreateVoucherLineInput {
   description: string;
-  category: "BUILDING" | "VEHICLE" | "OTHER";
+  categoryId: string;
   amount: string;
   otherExplanation?: string;
 }
@@ -70,6 +71,7 @@ export class ExpensesService {
   constructor(
     private readonly expensesRepository: ExpensesRepository,
     private readonly accountsRepository: AccountsRepository,
+    private readonly categoriesRepository: CategoriesRepository,
     private readonly ledgerPostingRepository: LedgerPostingRepository,
     private readonly auditLogRepository: AuditLogRepository,
     private readonly monthCloseRepository: MonthCloseRepository,
@@ -97,12 +99,6 @@ export class ExpensesService {
     if (!input.hasBill && !input.missingBillReason) {
       throw new BadRequestException("missingBillReason is required when hasBill is false");
     }
-    for (const line of input.lines) {
-      if (line.category === "OTHER" && (line.otherExplanation?.trim().length ?? 0) < 5) {
-        throw new BadRequestException("OTHER category lines require an explanation");
-      }
-    }
-
     const unitCode = await this.expensesRepository.findAccountUnitCode(account.id);
     if (!unitCode) {
       throw new NotFoundException(`Unit for account ${account.id} not found`);
@@ -125,6 +121,7 @@ export class ExpensesService {
       await tx.$queryRaw`SELECT id FROM petty_cash_accounts WHERE id = ${account.id}::uuid FOR UPDATE`;
 
       await this.assertPeriodNotClosed(account.id, expenseDate, tx);
+      await this.assertActiveCategoriesAndExplanations(input.lines, tx);
 
       const year = expenseDate.getUTCFullYear();
       const lastSeq = await this.expensesRepository.incrementVoucherCounter(account.id, year, tx);
@@ -154,7 +151,7 @@ export class ExpensesService {
             voucherId: created.id,
             lineNo: index + 1,
             description: line.description,
-            category: line.category,
+            categoryId: line.categoryId,
             amount: new Prisma.Decimal(line.amount),
             otherExplanation: line.otherExplanation,
           },
@@ -352,7 +349,7 @@ export class ExpensesService {
             voucherId: reversal.id,
             lineNo: line.lineNo,
             description: `Reversal: ${line.description}`,
-            category: line.category,
+            categoryId: line.categoryId,
             amount: line.amount,
             otherExplanation: line.otherExplanation ?? undefined,
           },
@@ -491,6 +488,30 @@ export class ExpensesService {
     const account = await this.accountsRepository.findById(accountId);
     if (!account || !user.unitScope.unitIds.includes(account.unitId)) {
       throw new ForbiddenException("Voucher is outside your authorized scope");
+    }
+  }
+
+  private async assertActiveCategoriesAndExplanations(
+    lines: CreateVoucherLineInput[],
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    const categoryIds = [...new Set(lines.map((line) => line.categoryId))];
+    const categories = await this.categoriesRepository.lockRulesForExpenseCreation(categoryIds, tx);
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
+
+    for (const line of lines) {
+      const category = categoryById.get(line.categoryId);
+      if (!category) {
+        throw new BadRequestException(`Expense category ${line.categoryId} does not exist`);
+      }
+      if (!category.isActive) {
+        throw new BadRequestException(`Expense category ${category.name} is inactive`);
+      }
+      if (category.requiresExplanation && (line.otherExplanation?.trim().length ?? 0) < 5) {
+        throw new BadRequestException(
+          `${category.name} category lines require an explanation of at least 5 characters`,
+        );
+      }
     }
   }
 

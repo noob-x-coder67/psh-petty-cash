@@ -18,6 +18,13 @@ import { PrismaService } from "../src/common/prisma/prisma.service";
 let app: INestApplication;
 let prisma: PrismaService;
 const sessions = new Map<string, string[]>();
+const categoryIds = {
+  building: "",
+  vehicle: "",
+  miscellaneous: "",
+  food: "",
+  zoo: "",
+};
 
 function extractCookies(res: request.Response): string[] {
   const raw = res.headers["set-cookie"] as unknown;
@@ -44,6 +51,25 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
+  const categories = await prisma.expenseCategory.findMany({
+    where: {
+      name: {
+        in: [
+          "Repair & Maintenance: Building",
+          "Repair & Maintenance: Vehicle",
+          "Miscellaneous",
+          "Food",
+          "Zoo",
+        ],
+      },
+    },
+  });
+  const byName = new Map(categories.map((category) => [category.name, category.id]));
+  categoryIds.building = byName.get("Repair & Maintenance: Building")!;
+  categoryIds.vehicle = byName.get("Repair & Maintenance: Vehicle")!;
+  categoryIds.miscellaneous = byName.get("Miscellaneous")!;
+  categoryIds.food = byName.get("Food")!;
+  categoryIds.zoo = byName.get("Zoo")!;
 });
 
 afterAll(async () => {
@@ -58,13 +84,13 @@ function baseVoucherBody(unitId: string, overrides: Record<string, unknown> = {}
     justification: "Routine building maintenance supplies",
     billTotal: "100.00",
     hasBill: true,
-    lines: [{ description: "Supplies", category: "BUILDING", amount: "100.00" }],
+    lines: [{ description: "Supplies", categoryId: categoryIds.building, amount: "100.00" }],
     ...overrides,
   };
 }
 
-describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", () => {
-  it("rejects a category outside BUILDING/VEHICLE/OTHER at the schema layer", async () => {
+describe("managed-category validation and BR-007", () => {
+  it("rejects a malformed category ID at the schema layer", async () => {
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
@@ -72,13 +98,13 @@ describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", (
       .set("Cookie", cookies)
       .send(
         baseVoucherBody(unit.id, {
-          lines: [{ description: "Supplies", category: "TRAVEL", amount: "100.00" }],
+          lines: [{ description: "Supplies", categoryId: "not-a-uuid", amount: "100.00" }],
         }),
       )
       .expect(400);
   });
 
-  it("rejects OTHER category without an explanation", async () => {
+  it("rejects a well-formed category ID that does not exist", async () => {
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
@@ -86,13 +112,27 @@ describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", (
       .set("Cookie", cookies)
       .send(
         baseVoucherBody(unit.id, {
-          lines: [{ description: "Misc", category: "OTHER", amount: "100.00" }],
+          lines: [{ description: "Supplies", categoryId: randomUUID(), amount: "100.00" }],
         }),
       )
       .expect(400);
   });
 
-  it("accepts OTHER category with a real explanation", async () => {
+  it("rejects Miscellaneous without its mandatory explanation", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
+    const cookies = await loginAs("user.sohawa@psh.local");
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send(
+        baseVoucherBody(unit.id, {
+          lines: [{ description: "Misc", categoryId: categoryIds.miscellaneous, amount: "100.00" }],
+        }),
+      )
+      .expect(400);
+  });
+
+  it("accepts Miscellaneous with a real explanation and returns category metadata", async () => {
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const cookies = await loginAs("user.sohawa@psh.local");
     await request(app.getHttpServer())
@@ -101,11 +141,81 @@ describe("category and OTHER-explanation validation (AC-004, AC-005, BR-007)", (
       .send(
         baseVoucherBody(unit.id, {
           lines: [
-            { description: "Misc", category: "OTHER", amount: "100.00", otherExplanation: "Kitchen supplies" },
+            {
+              description: "Misc",
+              categoryId: categoryIds.miscellaneous,
+              amount: "100.00",
+              otherExplanation: "Kitchen supplies",
+            },
           ],
         }),
       )
+      .expect(201)
+      .expect(({ body }) => {
+        expect(body.voucher.lines[0]).toMatchObject({
+          categoryId: categoryIds.miscellaneous,
+          category: {
+            id: categoryIds.miscellaneous,
+            name: "Miscellaneous",
+            requiresExplanation: true,
+          },
+        });
+      });
+  });
+
+  it("accepts categories outside the former three-value enum", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
+    const cookies = await loginAs("user.sohawa@psh.local");
+    const response = await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send(
+        baseVoucherBody(unit.id, {
+          lines: [{ description: "Meal", categoryId: categoryIds.food, amount: "100.00" }],
+        }),
+      )
       .expect(201);
+
+    expect(response.body.voucher.lines[0]).toMatchObject({
+      categoryId: categoryIds.food,
+      category: { id: categoryIds.food, name: "Food", requiresExplanation: false },
+    });
+
+    const detail = await request(app.getHttpServer())
+      .get(`/expenses/${response.body.voucher.id}`)
+      .set("Cookie", cookies)
+      .expect(200);
+    expect(detail.body.lines[0]).toMatchObject({
+      categoryId: categoryIds.food,
+      category: { id: categoryIds.food, name: "Food", requiresExplanation: false },
+    });
+
+    // Until Phase 4 removes ReportsRepository's three-value compatibility adapter,
+    // keep this Phase 3-only proof fixture out of later active-voucher report queries.
+    // The voucher/line/audit evidence remains present and immutable for this test run.
+    await prisma.expenseVoucher.update({
+      where: { id: response.body.voucher.id },
+      data: { state: "REVERSED" },
+    });
+  });
+
+  it("rejects an inactive category for a new voucher", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
+    const cookies = await loginAs("user.sohawa@psh.local");
+    await prisma.expenseCategory.update({ where: { id: categoryIds.zoo }, data: { isActive: false } });
+    try {
+      await request(app.getHttpServer())
+        .post("/expenses")
+        .set("Cookie", cookies)
+        .send(
+          baseVoucherBody(unit.id, {
+            lines: [{ description: "Zoo", categoryId: categoryIds.zoo, amount: "100.00" }],
+          }),
+        )
+        .expect(400);
+    } finally {
+      await prisma.expenseCategory.update({ where: { id: categoryIds.zoo }, data: { isActive: true } });
+    }
   });
 });
 
@@ -119,7 +229,7 @@ describe("total-equality (BR-005), enforced twice", () => {
       .send(
         baseVoucherBody(unit.id, {
           billTotal: "100.00",
-          lines: [{ description: "Supplies", category: "BUILDING", amount: "40.00" }],
+          lines: [{ description: "Supplies", categoryId: categoryIds.building, amount: "40.00" }],
         }),
       )
       .expect(400);
@@ -186,7 +296,9 @@ describe("negative balance (BR-011) — allowed, never blocked", () => {
       .send(
         baseVoucherBody(unit.id, {
           billTotal: bigAmount,
-          lines: [{ description: "Large emergency repair", category: "BUILDING", amount: bigAmount }],
+          lines: [
+            { description: "Large emergency repair", categoryId: categoryIds.building, amount: bigAmount },
+          ],
         }),
       )
       .expect(201);
@@ -208,7 +320,12 @@ describe("20-way concurrent voucher creation (Phase 3 exit gate)", () => {
         request(app.getHttpServer())
           .post("/expenses")
           .set("Cookie", cookies)
-          .send(baseVoucherBody(unit.id, { billTotal: "1.00", lines: [{ description: "x", category: "BUILDING", amount: "1.00" }] })),
+          .send(
+            baseVoucherBody(unit.id, {
+              billTotal: "1.00",
+              lines: [{ description: "x", categoryId: categoryIds.building, amount: "1.00" }],
+            }),
+          ),
       ),
     );
 
@@ -303,7 +420,7 @@ describe("privileged edit (BR-009, BR-010, FR-EXP-015/016)", () => {
 });
 
 describe("reversal (BR-020, FR-EXP-017) — no hard deletion, auditable compensating entry", () => {
-  it("reverses a voucher: original marked REVERSED, balance restored, audited", async () => {
+  it("reverses with the original category ID even after that category is deactivated", async () => {
     const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
     const before = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     const sohawaCookies = await loginAs("user.sohawa@psh.local");
@@ -311,18 +428,28 @@ describe("reversal (BR-020, FR-EXP-017) — no hard deletion, auditable compensa
     const createRes = await request(app.getHttpServer())
       .post("/expenses")
       .set("Cookie", sohawaCookies)
-      .send(baseVoucherBody(unit.id, { billTotal: "75.00", lines: [{ description: "x", category: "VEHICLE", amount: "75.00" }] }))
+      .send(
+        baseVoucherBody(unit.id, {
+          billTotal: "75.00",
+          lines: [{ description: "x", categoryId: categoryIds.vehicle, amount: "75.00" }],
+        }),
+      )
       .expect(201);
 
     const afterExpense = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     expect(afterExpense.cachedBalance.toFixed(2)).toBe(before.cachedBalance.minus("75.00").toFixed(2));
 
     const financeManagerCookies = await loginAs("financemanager@psh.local");
-    await request(app.getHttpServer())
-      .post(`/expenses/${createRes.body.voucher.id}/reverse`)
-      .set("Cookie", financeManagerCookies)
-      .send({ reason: "Entered against the wrong vendor by mistake" })
-      .expect(201);
+    await prisma.expenseCategory.update({ where: { id: categoryIds.vehicle }, data: { isActive: false } });
+    try {
+      await request(app.getHttpServer())
+        .post(`/expenses/${createRes.body.voucher.id}/reverse`)
+        .set("Cookie", financeManagerCookies)
+        .send({ reason: "Entered against the wrong vendor by mistake" })
+        .expect(201);
+    } finally {
+      await prisma.expenseCategory.update({ where: { id: categoryIds.vehicle }, data: { isActive: true } });
+    }
 
     const original = await prisma.expenseVoucher.findUniqueOrThrow({ where: { id: createRes.body.voucher.id } });
     expect(original.state).toBe("REVERSED");
@@ -330,6 +457,13 @@ describe("reversal (BR-020, FR-EXP-017) — no hard deletion, auditable compensa
 
     // Original voucher row is untouched — retained, not deleted (BR-020).
     expect(original.billTotal.toFixed(2)).toBe("75.00");
+
+    const reversalVoucher = await prisma.expenseVoucher.findUniqueOrThrow({
+      where: { id: original.reversedByVoucherId! },
+      include: { lines: true },
+    });
+    expect(reversalVoucher.lines).toHaveLength(1);
+    expect(reversalVoucher.lines[0]?.categoryId).toBe(categoryIds.vehicle);
 
     const afterReversal = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
     expect(afterReversal.cachedBalance.toFixed(2)).toBe(before.cachedBalance.toFixed(2));
@@ -473,24 +607,40 @@ describe("Expense Register search/filter (SRS §12.6, Phase 5e)", () => {
       .send(
         baseVoucherBody(unit.id, {
           vendorName: marker,
-          lines: [{ description: "Fuel", category: "VEHICLE", amount: "100.00" }],
+          lines: [{ description: "Fuel", categoryId: categoryIds.vehicle, amount: "100.00" }],
         }),
       )
       .expect(201);
 
     const vehicleRes = await request(app.getHttpServer())
       .get("/expenses")
-      .query({ unitId: unit.id, q: marker, category: "VEHICLE" })
+      .query({ unitId: unit.id, q: marker, categoryId: categoryIds.vehicle })
       .set("Cookie", cookies)
       .expect(200);
     expect(vehicleRes.body).toHaveLength(1);
+    expect(vehicleRes.body[0].lines[0]).toMatchObject({
+      categoryId: categoryIds.vehicle,
+      category: { id: categoryIds.vehicle, name: "Repair & Maintenance: Vehicle" },
+    });
 
     const buildingRes = await request(app.getHttpServer())
       .get("/expenses")
-      .query({ unitId: unit.id, q: marker, category: "BUILDING" })
+      .query({ unitId: unit.id, q: marker, categoryId: categoryIds.building })
       .set("Cookie", cookies)
       .expect(200);
     expect(buildingRes.body).toHaveLength(0);
+
+    await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, categoryId: "not-a-uuid" })
+      .set("Cookie", cookies)
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .get("/expenses")
+      .query({ unitId: unit.id, category: "VEHICLE" })
+      .set("Cookie", cookies)
+      .expect(400);
   });
 
   it("date range filter excludes vouchers outside the range", async () => {

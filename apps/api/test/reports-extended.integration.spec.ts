@@ -16,6 +16,7 @@ import { PrismaService } from "../src/common/prisma/prisma.service";
 
 let app: INestApplication;
 let prisma: PrismaService;
+let buildingCategoryId = "";
 const sessions = new Map<string, string[]>();
 
 function extractCookies(res: request.Response): string[] {
@@ -49,6 +50,11 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
+  buildingCategoryId = (
+    await prisma.expenseCategory.findUniqueOrThrow({
+      where: { name: "Repair & Maintenance: Building" },
+    })
+  ).id;
 
   // RPT-09/RPT-10 below used to randomize their base year, which only *probably*
   // avoided colliding with a past run's leftover state in the same bounded range — over
@@ -80,6 +86,21 @@ afterAll(async () => {
 describe("RPT-02 Unit Ledger", () => {
   it("returns ledger rows for a unit-scoped user's own unit only", async () => {
     const cookies = await loginAs("user.sohawa@psh.local");
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
+    await request(app.getHttpServer())
+      .post("/expenses")
+      .set("Cookie", cookies)
+      .send({
+        unitId: unit.id,
+        expenseDate: "2026-07-15",
+        vendorName: "RPT-02 Fixture Vendor",
+        justification: "RPT-02 self-contained unit-ledger fixture",
+        billTotal: "1.00",
+        hasBill: true,
+        lines: [{ description: "Supplies", categoryId: buildingCategoryId, amount: "1.00" }],
+      })
+      .expect(201);
+
     const res = await request(app.getHttpServer())
       .get("/reports/RPT-02")
       .query({ filters: filtersQuery(WIDE_RANGE) })
@@ -361,7 +382,7 @@ describe("RPT-13 User Activity", () => {
         justification: "RPT-13 user-activity fixture voucher",
         billTotal: "100.00",
         hasBill: true,
-        lines: [{ description: "Supplies", category: "BUILDING", amount: "100.00" }],
+        lines: [{ description: "Supplies", categoryId: buildingCategoryId, amount: "100.00" }],
       })
       .expect(201);
 
