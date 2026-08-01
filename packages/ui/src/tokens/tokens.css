@@ -273,6 +273,30 @@
   --shadow-3: 0 12px 28px hsl(0 0% 0% / 0.45), 0 4px 10px hsl(0 0% 0% / 0.32);
 }
 
+/* Radix Select injects a runtime rule that hides native scrollbars on its viewport.
+   Our managed category lists are long enough that the scroll position must remain
+   visually discoverable, so the shared Select explicitly restores a slim themed bar. */
+.psh-select-viewport[data-radix-select-viewport] {
+  scrollbar-color: var(--color-border-strong) transparent;
+  scrollbar-width: thin !important;
+}
+
+.psh-select-viewport[data-radix-select-viewport]::-webkit-scrollbar {
+  display: block !important;
+  width: 0.5rem;
+}
+
+.psh-select-viewport[data-radix-select-viewport]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.psh-select-viewport[data-radix-select-viewport]::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
 /* Respect prefers-reduced-motion at the CSS level too (AC-019, NFR-014) — belt-and-
    braces alongside the JS usePrefersReducedMotion() helper Motion-driven components
    already use, for any plain-CSS transition that isn't Motion-authored. */

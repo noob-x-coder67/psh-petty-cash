@@ -46,7 +46,12 @@ export const SelectContent = forwardRef<
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className={cn("p-1", position === "popper" && "w-full")}>
+      <SelectPrimitive.Viewport
+        className={cn(
+          "psh-select-viewport max-h-72 overflow-y-auto overscroll-contain p-1",
+          position === "popper" && "w-full",
+        )}
+      >
         {children}
       </SelectPrimitive.Viewport>
     </SelectPrimitive.Content>

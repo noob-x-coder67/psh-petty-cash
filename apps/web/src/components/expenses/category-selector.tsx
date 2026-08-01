@@ -1,10 +1,11 @@
 "use client";
 
 import type { ExpenseCategory } from "@psh/contracts";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@psh/ui";
 
 // ADR-0011 replaces the obsolete three-chip BR-006 control with managed reference
-// data. A native select remains keyboard/screen-reader complete even as Finance adds
-// categories; richer visual treatment can evolve without changing its value contract.
+// data. This uses the shared Select primitive so long managed lists stay bounded and
+// internally scrollable everywhere categories are selected.
 export function CategorySelector({
   categories,
   value,
@@ -15,20 +16,17 @@ export function CategorySelector({
   onChange: (categoryId: string) => void;
 }) {
   return (
-    <select
-      aria-label="Category"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className="psh-focus-ring w-full rounded-control border border-border bg-surface-1 px-3 py-2 text-sm text-ink"
-    >
-      <option value="" disabled>
-        Select a category
-      </option>
-      {categories.map((category) => (
-        <option key={category.id} value={category.id}>
-          {category.name}
-        </option>
-      ))}
-    </select>
+    <Select value={value || undefined} onValueChange={onChange}>
+      <SelectTrigger aria-label="Category">
+        <SelectValue placeholder="Select a category" />
+      </SelectTrigger>
+      <SelectContent>
+        {categories.map((category) => (
+          <SelectItem key={category.id} value={category.id}>
+            {category.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

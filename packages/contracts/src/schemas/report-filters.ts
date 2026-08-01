@@ -24,29 +24,29 @@ import { z } from "zod";
 // Index, Phase 6e), which is the first report that actually joins to the attachments table.
 export const ReportFilterSchema = z
   .object({
-  dateFrom: z.iso.date().optional(),
-  dateTo: z.iso.date().optional(),
-  enteredAtFrom: z.iso.date().optional(),
-  enteredAtTo: z.iso.date().optional(),
-  unitIds: z.array(z.string().uuid()).optional(),
-  // Stable managed-category identity (ADR-0011). Names are editable display metadata
-  // and therefore must never be persisted as a filter value.
-  categoryId: z.string().uuid().optional(),
-  vendorSearch: z.string().optional(),
-  amountMin: z.string().optional(),
-  amountMax: z.string().optional(),
-  checked: z.boolean().optional(),
-  hasBill: z.boolean().optional(),
-  negativeBalanceOnly: z.boolean().optional(),
-  enteredBy: z.string().uuid().optional(),
-  checkedBy: z.string().uuid().optional(),
-  isBackdated: z.boolean().optional(),
-  attachmentStatus: z.enum(["ACTIVE", "DELETED"]).optional(),
-  // RPT-14-only — ignored by the other 15 reports, same "accepted but has no target
-  // column here" stance already documented on Rpt01ResponseSchema for its own subset.
-  actorSearch: z.string().optional(),
-  action: z.string().optional(),
-  entityType: z.string().optional(),
+    dateFrom: z.iso.date().optional(),
+    dateTo: z.iso.date().optional(),
+    enteredAtFrom: z.iso.date().optional(),
+    enteredAtTo: z.iso.date().optional(),
+    unitIds: z.array(z.string().uuid()).optional(),
+    // Stable managed-category identity (ADR-0011). Names are editable display metadata
+    // and therefore must never be persisted as a filter value.
+    categoryId: z.string().uuid().optional(),
+    vendorSearch: z.string().optional(),
+    amountMin: z.string().optional(),
+    amountMax: z.string().optional(),
+    checked: z.boolean().optional(),
+    hasBill: z.boolean().optional(),
+    negativeBalanceOnly: z.boolean().optional(),
+    enteredBy: z.string().uuid().optional(),
+    checkedBy: z.string().uuid().optional(),
+    isBackdated: z.boolean().optional(),
+    attachmentStatus: z.enum(["ACTIVE", "DELETED"]).optional(),
+    // RPT-14-only — ignored by the other 15 reports, same "accepted but has no target
+    // column here" stance already documented on Rpt01ResponseSchema for its own subset.
+    actorSearch: z.string().optional(),
+    action: z.string().optional(),
+    entityType: z.string().optional(),
   })
   .strict();
 export type ReportFilter = z.infer<typeof ReportFilterSchema>;

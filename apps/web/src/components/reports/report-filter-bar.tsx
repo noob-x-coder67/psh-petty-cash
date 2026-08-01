@@ -1,7 +1,7 @@
 "use client";
 
 import type { ExpenseCategory, OrganizationalUnit, ReportFilter } from "@psh/contracts";
-import { Input } from "@psh/ui";
+import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@psh/ui";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "../../lib/api-client";
 
@@ -91,20 +91,23 @@ export function ReportFilterBar({ value, onChange, units, showUnitPicker, fields
       {fields.includes("categoryId") ? (
         <label className="flex flex-col gap-1 text-xs text-ink-muted">
           Category
-          <select
-            aria-label="Category"
-            className={selectClassName}
-            value={value.categoryId ?? ""}
-            onChange={(event) => patch({ categoryId: event.target.value || undefined })}
+          <Select
+            value={value.categoryId ?? "ALL"}
+            onValueChange={(categoryId) => patch({ categoryId: categoryId === "ALL" ? undefined : categoryId })}
           >
-            <option value="">All categories</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-                {category.isActive ? "" : " (Inactive)"}
-              </option>
-            ))}
-          </select>
+            <SelectTrigger aria-label="Category" className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All categories</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.name}
+                  {category.isActive ? "" : " (Inactive)"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
       ) : null}
 
