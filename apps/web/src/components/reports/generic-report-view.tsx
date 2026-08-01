@@ -26,6 +26,22 @@ interface ComplianceMonthLike {
   status: string;
 }
 
+interface ManagedCategoryLike {
+  name: string;
+  isActive: boolean;
+}
+
+function isManagedCategory(value: unknown): value is ManagedCategoryLike {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "name" in value &&
+    typeof value.name === "string" &&
+    "isActive" in value &&
+    typeof value.isActive === "boolean"
+  );
+}
+
 function isComplianceMonthArray(value: unknown): value is ComplianceMonthLike[] {
   return (
     Array.isArray(value) &&
@@ -46,6 +62,7 @@ function isComplianceMonthArray(value: unknown): value is ComplianceMonthLike[] 
 function formatCell(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (isManagedCategory(value)) return `${value.name}${value.isActive ? "" : " (Inactive)"}`;
   if (isComplianceMonthArray(value)) {
     return value.map((month) => `${month.year}-${String(month.month).padStart(2, "0")}:${month.status}`).join(", ");
   }
@@ -53,7 +70,10 @@ function formatCell(value: unknown): string {
 }
 
 export function GenericReportView({ rows }: { rows: Array<Record<string, unknown>> }) {
-  const columns = rows.length > 0 ? Object.keys(rows[0] ?? {}) : [];
+  const firstRow = rows[0] ?? {};
+  const columns = Object.keys(firstRow).filter(
+    (column) => !(column === "categoryId" && "category" in firstRow),
+  );
 
   return (
     <div className="overflow-x-auto rounded-card border border-border">

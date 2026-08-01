@@ -540,6 +540,32 @@ describe("RPT-16 Line-Item Analysis", () => {
       .expect(200);
     expect(res.body.totalAmount).toBe((direct._sum.amount ?? new Prisma.Decimal(0)).toFixed(2));
   });
+
+  it("filters and groups by managed category ID while returning current category metadata", async () => {
+    const cookies = await loginAs("financemanager@psh.local");
+    const category = await prisma.expenseCategory.findUniqueOrThrow({ where: { id: buildingCategoryId } });
+    const direct = await prisma.expenseLine.aggregate({
+      where: { categoryId: category.id, voucher: { state: "ACTIVE" } },
+      _sum: { amount: true },
+    });
+
+    const res = await request(app.getHttpServer())
+      .get("/reports/RPT-16")
+      .query({ filters: filtersQuery({ ...WIDE_RANGE, categoryId: category.id }) })
+      .set("Cookie", cookies)
+      .expect(200);
+
+    expect(res.body.totalAmount).toBe((direct._sum.amount ?? new Prisma.Decimal(0)).toFixed(2));
+    expect(
+      res.body.rows.every(
+        (row: { categoryId: string; category: { id: string; name: string; isActive: boolean } }) =>
+          row.categoryId === category.id &&
+          row.category.id === category.id &&
+          row.category.name === category.name &&
+          row.category.isActive === category.isActive,
+      ),
+    ).toBe(true);
+  });
 });
 
 describe("all 14 implemented reports are also exportable", () => {

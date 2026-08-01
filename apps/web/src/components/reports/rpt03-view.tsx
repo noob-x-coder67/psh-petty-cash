@@ -44,7 +44,7 @@ export function Rpt03View({ response }: { response: Rpt03Response }) {
                 <td className="px-3 py-2 text-ink">{row.vendorName}</td>
                 <td className="px-3 py-2 text-ink">{row.lineDescription}</td>
                 <td className="px-3 py-2">
-                  <CategoryChip category={row.category} />
+                  <CategoryChip category={row.category.name} />
                 </td>
                 <td className="px-3 py-2 text-right">
                   <Money value={row.lineAmount} />

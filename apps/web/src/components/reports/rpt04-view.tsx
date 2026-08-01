@@ -6,6 +6,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   Legend,
   Line,
   LineChart,
@@ -15,30 +16,33 @@ import {
   YAxis,
 } from "recharts";
 
-const CATEGORY_COLOR: Record<string, string> = {
-  BUILDING: "var(--color-royal-500)",
-  VEHICLE: "var(--color-violet-500)",
-  OTHER: "var(--color-amber-500)",
-};
+const CATEGORY_COLORS = Array.from({ length: 6 }, (_, index) => `var(--color-chart-${index + 1})`);
+
+function categoryColor(index: number): string {
+  return CATEGORY_COLORS[index % CATEGORY_COLORS.length] ?? "var(--color-chart-1)";
+}
 
 export function Rpt04View({ response }: { response: Rpt04Response }) {
   const barData = response.rows.map((row) => ({
-    category: row.category,
+    categoryId: row.categoryId,
+    categoryName: row.category.name,
     total: Number(row.totalAmount),
   }));
 
-  // Reshape the flat trend series into one row per month with a column per category, so
-  // Recharts can draw three lines on a shared X axis.
+  // Reshape the flat trend series into one row per month with a stable category-ID
+  // column per managed category. Display names remain editable labels, never data keys.
   const trendByMonth = new Map<string, Record<string, number | string>>();
   for (const point of response.trend) {
     const key = `${point.year}-${String(point.month).padStart(2, "0")}`;
     const row = trendByMonth.get(key) ?? { month: key };
-    row[point.category] = Number(point.totalAmount);
+    row[point.categoryId] = Number(point.totalAmount);
     trendByMonth.set(key, row);
   }
   const trendData = Array.from(trendByMonth.values()).sort((a, b) =>
     String(a.month).localeCompare(String(b.month)),
   );
+  const trendCategoryIds = new Set(response.trend.map((point) => point.categoryId));
+  const trendCategories = response.rows.filter((row) => trendCategoryIds.has(row.categoryId));
 
   return (
     <div className="flex flex-col gap-4">
@@ -54,8 +58,11 @@ export function Rpt04View({ response }: { response: Rpt04Response }) {
           </thead>
           <tbody>
             {response.rows.map((row) => (
-              <tr key={row.category} className="border-b border-border last:border-0">
-                <td className="px-3 py-2 text-ink">{row.category}</td>
+              <tr key={row.categoryId} className="border-b border-border last:border-0">
+                <td className="px-3 py-2 text-ink">
+                  {row.category.name}
+                  {row.category.isActive ? "" : " (Inactive)"}
+                </td>
                 <td className="px-3 py-2 text-right">
                   <Money value={row.totalAmount} />
                 </td>
@@ -83,14 +90,21 @@ export function Rpt04View({ response }: { response: Rpt04Response }) {
           <TabsTrigger value="trend">Monthly trend</TabsTrigger>
         </TabsList>
         <TabsContent value="split">
-          <div className="h-72 rounded-card border border-border p-4">
+          <div
+            className="rounded-card border border-border p-4"
+            style={{ height: Math.max(288, response.rows.length * 34) }}
+          >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={barData}>
+              <BarChart data={barData} layout="vertical" margin={{ left: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="category" fontSize={12} />
-                <YAxis fontSize={12} />
+                <XAxis type="number" fontSize={12} />
+                <YAxis dataKey="categoryName" type="category" width={220} fontSize={12} />
                 <Tooltip formatter={(value) => <Money value={Number(value)} />} />
-                <Bar dataKey="total" fill="var(--color-royal-500)" />
+                <Bar dataKey="total">
+                  {barData.map((row, index) => (
+                    <Cell key={row.categoryId} fill={categoryColor(index)} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -104,12 +118,13 @@ export function Rpt04View({ response }: { response: Rpt04Response }) {
                 <YAxis fontSize={12} />
                 <Tooltip formatter={(value) => <Money value={Number(value)} />} />
                 <Legend />
-                {(["BUILDING", "VEHICLE", "OTHER"] as const).map((category) => (
+                {trendCategories.map((categoryRow, index) => (
                   <Line
-                    key={category}
+                    key={categoryRow.categoryId}
                     type="monotone"
-                    dataKey={category}
-                    stroke={CATEGORY_COLOR[category]}
+                    dataKey={categoryRow.categoryId}
+                    name={categoryRow.category.name}
+                    stroke={categoryColor(index)}
                     connectNulls
                   />
                 ))}

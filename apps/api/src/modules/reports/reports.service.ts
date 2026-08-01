@@ -1,6 +1,7 @@
 import { Injectable, NotImplementedException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import type {
+  ExpenseCategory,
   ReportDatasetResponse,
   ReportFilter,
   ReportKey,
@@ -21,6 +22,7 @@ import type {
 } from "@psh/contracts";
 import type { z } from "zod";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { CategoriesRepository } from "../categories/categories.repository";
 import { MonthCloseRepository } from "../month-close/month-close.repository";
 import { evaluateThreeMonthCompliance, precedingThreeMonths } from "../month-close/replenishments.rules";
 import { resolveReportPeriod, resolveScopedUnitIds } from "./reports.filters";
@@ -35,6 +37,22 @@ import { ReportsRepository, type ReportPeriod } from "./reports.repository";
 
 function toDateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function toCategoryContract(category: {
+  id: string;
+  name: string;
+  requiresExplanation: boolean;
+  isActive: boolean;
+  sortOrder: number;
+}): ExpenseCategory {
+  return {
+    id: category.id,
+    name: category.name,
+    requiresExplanation: category.requiresExplanation,
+    isActive: category.isActive,
+    sortOrder: category.sortOrder,
+  };
 }
 
 // Display-only wall-clock time (RPT-02's "Effective Time" column) — rendered in
@@ -73,6 +91,7 @@ export class ReportsService {
   constructor(
     private readonly reportsRepository: ReportsRepository,
     private readonly monthCloseRepository: MonthCloseRepository,
+    private readonly categoriesRepository: CategoriesRepository,
   ) {}
 
   async getReport(
@@ -203,7 +222,8 @@ export class ReportsService {
         vendorName: line.voucher.vendorName,
         lineNo: line.lineNo,
         lineDescription: line.description,
-        category: line.category,
+        categoryId: line.categoryId,
+        category: toCategoryContract(line.category),
         lineAmount: line.amount.toFixed(2),
         billTotal: line.voucher.billTotal.toFixed(2),
         checked: line.voucher.checkedAt !== null,
@@ -222,43 +242,78 @@ export class ReportsService {
     };
   }
 
-  // filter.category is deliberately ignored here — RPT-04 *is* the category breakdown,
+  // filter.categoryId is deliberately ignored here — RPT-04 *is* the category breakdown,
   // so restricting it to one category would defeat the report's own purpose.
   private async buildCategoryAnalysis(unitIds: string[] | null, period: ReportPeriod, filter: ReportFilter) {
-    const lines = await this.reportsRepository.listExpenseLines(unitIds, period, { ...filter, category: undefined });
+    const [lines, categories] = await Promise.all([
+      this.reportsRepository.listExpenseLines(unitIds, period, { ...filter, categoryId: undefined }),
+      // Inactive categories remain visible because they may own historical expense
+      // lines. Their metadata marks them inactive; deactivation never erases history.
+      this.categoriesRepository.list(true),
+    ]);
 
     const categoryTotals = new Map<string, { amount: Prisma.Decimal; count: number }>();
-    const trendTotals = new Map<string, Prisma.Decimal>(); // key: `${year}-${month}-${category}`
+    const trendTotals = new Map<
+      string,
+      { year: number; month: number; categoryId: string; amount: Prisma.Decimal }
+    >();
     let grandTotal = new Prisma.Decimal(0);
 
     for (const line of lines) {
-      const bucket = categoryTotals.get(line.category) ?? { amount: new Prisma.Decimal(0), count: 0 };
+      const bucket = categoryTotals.get(line.categoryId) ?? { amount: new Prisma.Decimal(0), count: 0 };
       bucket.amount = bucket.amount.plus(line.amount);
       bucket.count += 1;
-      categoryTotals.set(line.category, bucket);
+      categoryTotals.set(line.categoryId, bucket);
       grandTotal = grandTotal.plus(line.amount);
 
       const expenseDate = line.voucher.expenseDate;
-      const trendKey = `${expenseDate.getUTCFullYear()}-${expenseDate.getUTCMonth() + 1}-${line.category}`;
-      trendTotals.set(trendKey, (trendTotals.get(trendKey) ?? new Prisma.Decimal(0)).plus(line.amount));
+      const year = expenseDate.getUTCFullYear();
+      const month = expenseDate.getUTCMonth() + 1;
+      const trendKey = `${year}:${month}:${line.categoryId}`;
+      const trendBucket = trendTotals.get(trendKey) ?? {
+        year,
+        month,
+        categoryId: line.categoryId,
+        amount: new Prisma.Decimal(0),
+      };
+      trendBucket.amount = trendBucket.amount.plus(line.amount);
+      trendTotals.set(trendKey, trendBucket);
     }
 
-    const rows: Rpt04CategoryRow[] = (["BUILDING", "VEHICLE", "OTHER"] as const).map((category) => {
-      const bucket = categoryTotals.get(category) ?? { amount: new Prisma.Decimal(0), count: 0 };
+    const categoryById = new Map(categories.map((category) => [category.id, category]));
+    const categoryOrder = new Map(categories.map((category, index) => [category.id, index]));
+    const rows: Rpt04CategoryRow[] = categories.map((category) => {
+      const bucket = categoryTotals.get(category.id) ?? { amount: new Prisma.Decimal(0), count: 0 };
       return {
-        category,
+        categoryId: category.id,
+        category: toCategoryContract(category),
         totalAmount: bucket.amount.toFixed(2),
         lineCount: bucket.count,
         percentageOfTotal: computeCategoryPercentage(bucket.amount, grandTotal),
       };
     });
 
-    const trend = Array.from(trendTotals.entries())
-      .map(([key, amount]) => {
-        const [year, month, category] = key.split("-") as [string, string, "BUILDING" | "VEHICLE" | "OTHER"];
-        return { year: Number(year), month: Number(month), category, totalAmount: amount.toFixed(2) };
+    const trend = Array.from(trendTotals.values())
+      .map(({ year, month, categoryId, amount }) => {
+        const category = categoryById.get(categoryId);
+        if (!category) {
+          throw new Error(`Expense line references missing managed category ${categoryId}`);
+        }
+        return {
+          year,
+          month,
+          categoryId,
+          category: toCategoryContract(category),
+          totalAmount: amount.toFixed(2),
+        };
       })
-      .sort((a, b) => a.year - b.year || a.month - b.month || a.category.localeCompare(b.category));
+      .sort(
+        (a, b) =>
+          a.year - b.year ||
+          a.month - b.month ||
+          (categoryOrder.get(a.categoryId) ?? Number.MAX_SAFE_INTEGER) -
+            (categoryOrder.get(b.categoryId) ?? Number.MAX_SAFE_INTEGER),
+      );
 
     return { rows, trend, totalAmount: grandTotal.toFixed(2) };
   }
@@ -599,26 +654,47 @@ export class ReportsService {
     filter: ReportFilter,
   ): Promise<{ rows: Rpt16Row[]; totalAmount: string }> {
     const lines = await this.reportsRepository.listExpenseLines(unitIds, period, filter);
-    const groups = new Map<string, { category: Rpt16Row["category"]; amount: Prisma.Decimal; count: number }>();
+    const groups = new Map<
+      string,
+      {
+        description: string;
+        categoryId: string;
+        category: Rpt16Row["category"];
+        amount: Prisma.Decimal;
+        count: number;
+      }
+    >();
     let grandTotal = new Prisma.Decimal(0);
 
     for (const line of lines) {
-      const key = `${line.description}|${line.category}`;
-      const bucket = groups.get(key) ?? { category: line.category, amount: new Prisma.Decimal(0), count: 0 };
+      const key = JSON.stringify([line.description, line.categoryId]);
+      const bucket = groups.get(key) ?? {
+        description: line.description,
+        categoryId: line.categoryId,
+        category: toCategoryContract(line.category),
+        amount: new Prisma.Decimal(0),
+        count: 0,
+      };
       bucket.amount = bucket.amount.plus(line.amount);
       bucket.count += 1;
       groups.set(key, bucket);
       grandTotal = grandTotal.plus(line.amount);
     }
 
-    const rows: Rpt16Row[] = Array.from(groups.entries())
-      .map(([key, bucket]) => ({
-        description: key.slice(0, key.lastIndexOf("|")),
+    const rows: Rpt16Row[] = Array.from(groups.values())
+      .map((bucket) => ({
+        description: bucket.description,
+        categoryId: bucket.categoryId,
         category: bucket.category,
         totalAmount: bucket.amount.toFixed(2),
         occurrenceCount: bucket.count,
       }))
-      .sort((a, b) => new Prisma.Decimal(b.totalAmount).minus(a.totalAmount).toNumber());
+      .sort(
+        (a, b) =>
+          new Prisma.Decimal(b.totalAmount).minus(a.totalAmount).toNumber() ||
+          a.description.localeCompare(b.description) ||
+          a.category.sortOrder - b.category.sortOrder,
+      );
 
     return { rows, totalAmount: grandTotal.toFixed(2) };
   }

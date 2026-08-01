@@ -22,13 +22,16 @@ import { z } from "zod";
 // attachmentStatus is modeled in the schema but not yet wired into any of RPT-01/03/04/06
 // (Phase 6b) — it's an attachment-level filter that belongs to RPT-12 (Monthly Attachment
 // Index, Phase 6e), which is the first report that actually joins to the attachments table.
-export const ReportFilterSchema = z.object({
+export const ReportFilterSchema = z
+  .object({
   dateFrom: z.iso.date().optional(),
   dateTo: z.iso.date().optional(),
   enteredAtFrom: z.iso.date().optional(),
   enteredAtTo: z.iso.date().optional(),
   unitIds: z.array(z.string().uuid()).optional(),
-  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]).optional(),
+  // Stable managed-category identity (ADR-0011). Names are editable display metadata
+  // and therefore must never be persisted as a filter value.
+  categoryId: z.string().uuid().optional(),
   vendorSearch: z.string().optional(),
   amountMin: z.string().optional(),
   amountMax: z.string().optional(),
@@ -44,5 +47,6 @@ export const ReportFilterSchema = z.object({
   actorSearch: z.string().optional(),
   action: z.string().optional(),
   entityType: z.string().optional(),
-});
+  })
+  .strict();
 export type ReportFilter = z.infer<typeof ReportFilterSchema>;

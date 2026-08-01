@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ExpenseCategorySchema } from "./categories.js";
 import { ComplianceMonthSchema } from "./replenishments.js";
 import { ReportFilterSchema } from "./report-filters.js";
 
@@ -43,7 +44,8 @@ export const Rpt03RowSchema = z.object({
   vendorName: z.string(),
   lineNo: z.number().int(),
   lineDescription: z.string(),
-  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
+  categoryId: z.string().uuid(),
+  category: ExpenseCategorySchema,
   lineAmount: z.string(),
   billTotal: z.string(),
   checked: z.boolean(),
@@ -64,7 +66,8 @@ export type Rpt03Response = z.infer<typeof Rpt03ResponseSchema>;
 // RPT-04 Category Analysis — totals/percentages for the filtered range, plus a monthly
 // trend series so "trends" (SRS §10.2's own word for this report) is real, not implied.
 export const Rpt04CategoryRowSchema = z.object({
-  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
+  categoryId: z.string().uuid(),
+  category: ExpenseCategorySchema,
   totalAmount: z.string(),
   lineCount: z.number().int(),
   percentageOfTotal: z.number(),
@@ -72,7 +75,8 @@ export const Rpt04CategoryRowSchema = z.object({
 export const Rpt04TrendPointSchema = z.object({
   year: z.number().int(),
   month: z.number().int(),
-  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
+  categoryId: z.string().uuid(),
+  category: ExpenseCategorySchema,
   totalAmount: z.string(),
 });
 export const Rpt04ResponseSchema = ReportEnvelopeSchema.extend({
@@ -292,7 +296,8 @@ export type Rpt15Response = z.infer<typeof Rpt15ResponseSchema>;
 // RPT-04's category-grain rollup).
 export const Rpt16RowSchema = z.object({
   description: z.string(),
-  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
+  categoryId: z.string().uuid(),
+  category: ExpenseCategorySchema,
   totalAmount: z.string(),
   occurrenceCount: z.number().int(),
 });

@@ -2,7 +2,6 @@ import { Injectable } from "@nestjs/common";
 import { Prisma, type LedgerEntryType } from "@prisma/client";
 import type { ReportFilter } from "@psh/contracts";
 import { PrismaService } from "../../common/prisma/prisma.service";
-import { LEGACY_CATEGORY_NAME, legacyCategoryFromName } from "../categories/category-compat";
 
 export interface ReportPeriod {
   start: Date;
@@ -96,20 +95,16 @@ export class ReportsRepository {
     }
     return {
       voucher: voucherWhere,
-      category: filter.category ? { name: LEGACY_CATEGORY_NAME[filter.category] } : undefined,
+      categoryId: filter.categoryId,
     };
   }
 
   async listExpenseLines(unitIds: string[] | null, period: ReportPeriod, filter: ReportFilter) {
-    const lines = await this.prisma.expenseLine.findMany({
+    return this.prisma.expenseLine.findMany({
       where: this.buildLineWhere(unitIds, period, filter),
       include: { category: true, voucher: { include: { account: { include: { unit: true } } } } },
       orderBy: [{ voucher: { expenseDate: "asc" } }, { voucher: { voucherNo: "asc" } }, { lineNo: "asc" }],
     });
-    return lines.map(({ category, ...line }) => ({
-      ...line,
-      category: legacyCategoryFromName(category.name),
-    }));
   }
 
   async listVouchersForReceiptControl(unitIds: string[] | null, period: ReportPeriod, filter: ReportFilter) {

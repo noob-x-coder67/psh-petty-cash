@@ -265,6 +265,56 @@ describe("RPT-03/04/06 reconcile against a direct query for one seeded unit-mont
 
     expect(res.body.summary.lineCount).toBe(direct._count);
     expect(res.body.summary.totalAmount).toBe((direct._sum.amount ?? new Prisma.Decimal(0)).toFixed(2));
+    expect(
+      res.body.rows.every(
+        (row: { categoryId: string; category: { id: string; name: string; sortOrder: number } }) =>
+          row.categoryId === row.category.id && row.category.name.length > 0 && row.category.sortOrder > 0,
+      ),
+    ).toBe(true);
+  });
+
+  it("RPT-03 filters directly by managed category ID and returns current category metadata", async () => {
+    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-CCS" } });
+    const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
+    const fixtureLine = await prisma.expenseLine.findFirstOrThrow({
+      where: { voucher: { accountId: account.id, state: "ACTIVE" } },
+      include: { category: true, voucher: true },
+      orderBy: { voucher: { expenseDate: "desc" } },
+    });
+    const expenseDate = fixtureLine.voucher.expenseDate.toISOString().slice(0, 10);
+    const direct = await prisma.expenseLine.aggregate({
+      where: {
+        categoryId: fixtureLine.categoryId,
+        voucher: { accountId: account.id, state: "ACTIVE", expenseDate: fixtureLine.voucher.expenseDate },
+      },
+      _sum: { amount: true },
+      _count: true,
+    });
+
+    const cookies = await loginAs("financemanager@psh.local");
+    const res = await request(app.getHttpServer())
+      .get("/reports/RPT-03")
+      .query({
+        filters: filtersQuery({
+          unitIds: [unit.id],
+          dateFrom: expenseDate,
+          dateTo: expenseDate,
+          categoryId: fixtureLine.categoryId,
+        }),
+      })
+      .set("Cookie", cookies)
+      .expect(200);
+
+    expect(res.body.summary.lineCount).toBe(direct._count);
+    expect(res.body.summary.totalAmount).toBe((direct._sum.amount ?? new Prisma.Decimal(0)).toFixed(2));
+    expect(
+      res.body.rows.every(
+        (row: { categoryId: string; category: { id: string; name: string } }) =>
+          row.categoryId === fixtureLine.categoryId &&
+          row.category.id === fixtureLine.categoryId &&
+          row.category.name === fixtureLine.category.name,
+      ),
+    ).toBe(true);
   });
 
   it("RPT-04's grand total matches the same direct SUM for the same unit-month", async () => {
@@ -291,7 +341,26 @@ describe("RPT-03/04/06 reconcile against a direct query for one seeded unit-mont
       .set("Cookie", cookies)
       .expect(200);
 
+    const categories = await prisma.expenseCategory.findMany({
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+
     expect(res.body.totalAmount).toBe((direct._sum.amount ?? new Prisma.Decimal(0)).toFixed(2));
+    expect(res.body.rows.map((row: { categoryId: string }) => row.categoryId)).toEqual(
+      categories.map((category) => category.id),
+    );
+    expect(
+      res.body.rows.every(
+        (row: { categoryId: string; category: { id: string; name: string; isActive: boolean } }) => {
+          const directCategory = categories.find((category) => category.id === row.categoryId);
+          return (
+            row.category.id === row.categoryId &&
+            row.category.name === directCategory?.name &&
+            row.category.isActive === directCategory?.isActive
+          );
+        },
+      ),
+    ).toBe(true);
     const rowSum = (res.body.rows as Array<{ totalAmount: string }>).reduce(
       (sum: Prisma.Decimal, row) => sum.plus(row.totalAmount),
       new Prisma.Decimal(0),
