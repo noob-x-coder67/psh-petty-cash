@@ -1,17 +1,6 @@
 -- CreateExtension
 CREATE EXTENSION IF NOT EXISTS "citext";
--- Enable UUIDv7 support on PostgreSQL versions without native uuidv7()
-CREATE EXTENSION IF NOT EXISTS "pg_uuidv7";
 
--- Compatibility wrapper used by the existing migration files
-CREATE OR REPLACE FUNCTION public.uuidv7()
-RETURNS uuid
-LANGUAGE sql
-VOLATILE
-PARALLEL SAFE
-AS $$
-    SELECT public.uuid_generate_v7();
-$$;
 -- CreateEnum
 CREATE TYPE "unit_type" AS ENUM ('HEAD_OFFICE', 'CENTER', 'PROJECT', 'PROJECT_LOCATION', 'SERVICE');
 
