@@ -7,6 +7,7 @@ import { motion } from "motion/react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { usePrefersReducedMotion } from "../../lib/motion";
+import { canAccessAdministration } from "../../lib/admin-navigation";
 
 interface Tab {
   label: string;
@@ -32,10 +33,9 @@ export function WorkspaceTabs({ user }: { user: AuthenticatedUser }) {
     { label: "Reports Studio", href: "/reports", icon: ShieldQuestion },
     { label: "Month Close", href: "/month-close", icon: ShieldCheck },
   ];
-  // admin.manage_unit_access (Finance Manager) is the weaker of the two admin
-  // permissions but still needs the tab — Finance Manager's "Limited" Appendix A access
-  // (assigning roles/unit-access to existing users) lives entirely inside /admin/users.
-  if (user.permissionKeys.includes("admin.manage_users_units") || user.permissionKeys.includes("admin.manage_unit_access")) {
+  // Any permission backed by an Administration module grants the workspace entry.
+  // Module cards and their APIs apply the more specific permission again.
+  if (canAccessAdministration(user.permissionKeys)) {
     tabs.push({ label: "Administration", href: "/admin", icon: Sliders });
   }
 

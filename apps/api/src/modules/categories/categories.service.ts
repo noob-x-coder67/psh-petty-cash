@@ -44,6 +44,12 @@ export class CategoriesService {
         await this.categoriesRepository.shiftAtOrAfter(insertAt, tx);
         const created = await this.categoriesRepository.create(input.name, insertAt, tx);
 
+        // Alphabetical is the required default. A deliberate custom order is a bonus
+        // capability, but adding a new category always re-establishes the full A-Z list
+        // rather than trying to splice one alphabetical rank into an arbitrary order.
+        await this.normalizeAlphabeticalOrder(tx);
+        const after = (await this.categoriesRepository.findById(created.id, tx))!;
+
         await this.auditLogRepository.record(tx, {
           actorId: actor.id,
           actorRole: actor.roleKeys[0] ?? null,
@@ -51,9 +57,9 @@ export class CategoriesService {
           entityType: "expense_categories",
           entityId: created.id,
           unitId: null,
-          after: created,
+          after,
         });
-        return created;
+        return after;
       });
     } catch (error: unknown) {
       // The CITEXT unique constraint is the concurrency-safe final defense. Convert its
@@ -65,11 +71,7 @@ export class CategoriesService {
     }
   }
 
-  async update(
-    id: string,
-    input: UpdateExpenseCategoryRequest,
-    actor: AuthenticatedUser,
-  ): Promise<ExpenseCategory> {
+  async update(id: string, input: UpdateExpenseCategoryRequest, actor: AuthenticatedUser): Promise<ExpenseCategory> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await this.categoriesRepository.lockOrdering(tx);
@@ -147,6 +149,32 @@ export class CategoriesService {
         unitId: null,
         before: before.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })),
         after: after.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })),
+      });
+      return after;
+    });
+  }
+
+  async restoreAlphabetical(actor: AuthenticatedUser): Promise<ExpenseCategory[]> {
+    return this.prisma.$transaction(async (tx) => {
+      await this.categoriesRepository.lockOrdering(tx);
+      const before = await this.categoriesRepository.list(true, tx);
+      if (before.length === 0) {
+        throw new BadRequestException("At least one category is required");
+      }
+
+      await this.normalizeAlphabeticalOrder(tx);
+      const after = await this.categoriesRepository.list(true, tx);
+
+      await this.auditLogRepository.record(tx, {
+        actorId: actor.id,
+        actorRole: actor.roleKeys[0] ?? null,
+        action: "CATEGORY_REORDER",
+        entityType: "expense_categories",
+        entityId: after[0]!.id,
+        unitId: null,
+        before: before.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })),
+        after: after.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })),
+        diff: { mode: "ALPHABETICAL" },
       });
       return after;
     });

@@ -13,7 +13,7 @@ export type ExpenseCategory = z.infer<typeof ExpenseCategorySchema>;
 
 export const CreateExpenseCategoryRequestSchema = z.object({
   name: z.string().trim().min(1).max(120),
-});
+}).strict();
 export type CreateExpenseCategoryRequest = z.infer<typeof CreateExpenseCategoryRequestSchema>;
 
 export const UpdateExpenseCategoryRequestSchema = z
@@ -21,6 +21,7 @@ export const UpdateExpenseCategoryRequestSchema = z
     name: z.string().trim().min(1).max(120).optional(),
     isActive: z.boolean().optional(),
   })
+  .strict()
   .refine((value) => value.name !== undefined || value.isActive !== undefined, {
     message: "At least one category field must be supplied",
   });
@@ -30,5 +31,5 @@ export type UpdateExpenseCategoryRequest = z.infer<typeof UpdateExpenseCategoryR
 // permutation prevents omitted rows from acquiring ambiguous or duplicate ranks.
 export const ReorderExpenseCategoriesRequestSchema = z.object({
   categoryIds: z.array(z.string().uuid()).min(1),
-});
+}).strict();
 export type ReorderExpenseCategoriesRequest = z.infer<typeof ReorderExpenseCategoriesRequestSchema>;

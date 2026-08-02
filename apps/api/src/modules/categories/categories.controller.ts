@@ -41,7 +41,8 @@ export class AdminCategoriesController {
   @RequiresPermission("category.manage")
   @Audited({ action: "CATEGORY_CREATE", entityType: "expense_categories" })
   async create(
-    @Body(new ZodValidationPipe(CreateExpenseCategoryRequestSchema)) body: CreateExpenseCategoryRequest,
+    @Body(new ZodValidationPipe(CreateExpenseCategoryRequestSchema))
+    body: CreateExpenseCategoryRequest,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PrismaExpenseCategory> {
     return this.categoriesService.create(body, user);
@@ -52,7 +53,8 @@ export class AdminCategoriesController {
   @Audited({ action: "CATEGORY_UPDATE", entityType: "expense_categories" })
   async update(
     @Param("id", new ParseUUIDPipe()) id: string,
-    @Body(new ZodValidationPipe(UpdateExpenseCategoryRequestSchema)) body: UpdateExpenseCategoryRequest,
+    @Body(new ZodValidationPipe(UpdateExpenseCategoryRequestSchema))
+    body: UpdateExpenseCategoryRequest,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PrismaExpenseCategory> {
     return this.categoriesService.update(id, body, user);
@@ -62,9 +64,17 @@ export class AdminCategoriesController {
   @RequiresPermission("category.manage")
   @Audited({ action: "CATEGORY_REORDER", entityType: "expense_categories" })
   async reorder(
-    @Body(new ZodValidationPipe(ReorderExpenseCategoriesRequestSchema)) body: ReorderExpenseCategoriesRequest,
+    @Body(new ZodValidationPipe(ReorderExpenseCategoriesRequestSchema))
+    body: ReorderExpenseCategoriesRequest,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PrismaExpenseCategory[]> {
     return this.categoriesService.reorder(body, user);
+  }
+
+  @Put("order/alphabetical")
+  @RequiresPermission("category.manage")
+  @Audited({ action: "CATEGORY_REORDER", entityType: "expense_categories" })
+  async restoreAlphabetical(@CurrentUser() user: AuthenticatedUser): Promise<PrismaExpenseCategory[]> {
+    return this.categoriesService.restoreAlphabetical(user);
   }
 }
