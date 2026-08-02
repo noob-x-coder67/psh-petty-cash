@@ -24,6 +24,10 @@ import { PrismaClient, Prisma } from "@prisma/client";
 const TOTAL_VOUCHERS = Number(process.env.SEED_VOLUME_TOTAL ?? 50_000);
 const BATCH_SIZE = 500;
 const SPREAD_DAYS = 365;
+// PSH-BHW is the integration suite's dedicated Month Close fixture. Its live
+// expected balance must remain physically countable, so volume data belongs on
+// the other accounts rather than contaminating that cross-module fixture.
+const VOLUME_EXCLUDED_UNIT_CODES = new Set(["PSH-BHW"]);
 
 // Repetition = weight, a cheap way to get a Zipf-ish "a few vendors dominate" spread
 // for RPT-05 (Vendor/Payee Analysis) to have something worth ranking.
@@ -82,7 +86,10 @@ function randomAmount(): Prisma.Decimal {
   } else {
     value = 15000 + Math.random() * 60000;
   }
-  return new Prisma.Decimal(value.toFixed(2));
+  // Cash Count v1 supports whole-rupee notes down to PKR 10. Keep synthetic
+  // balances exactly decomposable so the volume fixture and Month Close's
+  // denomination invariant can coexist in the same integration database.
+  return new Prisma.Decimal(Math.round(value / 10) * 10);
 }
 
 function sortedRandomDates(count: number, now: Date): Date[] {
@@ -288,7 +295,9 @@ async function main(): Promise<void> {
 
   await ensureAccountsForAllUnits(prisma, superAdmin.id);
 
-  const accounts = await prisma.pettyCashAccount.findMany({ include: { unit: true } });
+  const accounts = (await prisma.pettyCashAccount.findMany({ include: { unit: true } })).filter(
+    (account) => !VOLUME_EXCLUDED_UNIT_CODES.has(account.unit.code),
+  );
   if (accounts.length === 0) {
     throw new Error("No petty-cash accounts found even after ensureAccountsForAllUnits — check seed data.");
   }
