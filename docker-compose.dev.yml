@@ -1,6 +1,8 @@
 services:
   db:
-    image: postgres:18-alpine
+    build:
+      context: docker/postgres
+    image: psh-postgres:17.10-pg_uuidv7-1.6
     environment:
       POSTGRES_USER: psh
       POSTGRES_PASSWORD: devonly
