@@ -1,12 +1,14 @@
 "use client";
 
-import type { OrganizationalUnit, ReportFilter } from "@psh/contracts";
-import { Input } from "@psh/ui";
+import type { ExpenseCategory, OrganizationalUnit, ReportFilter } from "@psh/contracts";
+import { Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@psh/ui";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "../../lib/api-client";
 
 export type ReportFilterField =
   | "dateRange"
   | "unit"
-  | "category"
+  | "categoryId"
   | "vendor"
   | "amountRange"
   | "checked"
@@ -30,6 +32,12 @@ const selectClassName = "psh-focus-ring h-10 rounded-control border border-borde
 // breakdown; see reports.service.ts) and hides that control here rather than showing a
 // filter that silently does nothing.
 export function ReportFilterBar({ value, onChange, units, showUnitPicker, fields }: ReportFilterBarProps) {
+  const { data: categories = [] } = useQuery({
+    queryKey: ["expense-categories", "all"],
+    queryFn: () => apiFetch<ExpenseCategory[]>("/expense-categories?includeInactive=true"),
+    enabled: fields.includes("categoryId"),
+  });
+
   function patch(next: Partial<ReportFilter>): void {
     onChange({ ...value, ...next });
   }
@@ -80,22 +88,26 @@ export function ReportFilterBar({ value, onChange, units, showUnitPicker, fields
         </label>
       ) : null}
 
-      {fields.includes("category") ? (
+      {fields.includes("categoryId") ? (
         <label className="flex flex-col gap-1 text-xs text-ink-muted">
           Category
-          <select
-            aria-label="Category"
-            className={selectClassName}
-            value={value.category ?? ""}
-            onChange={(event) =>
-              patch({ category: (event.target.value || undefined) as ReportFilter["category"] })
-            }
+          <Select
+            value={value.categoryId ?? "ALL"}
+            onValueChange={(categoryId) => patch({ categoryId: categoryId === "ALL" ? undefined : categoryId })}
           >
-            <option value="">All categories</option>
-            <option value="BUILDING">Building</option>
-            <option value="VEHICLE">Vehicle</option>
-            <option value="OTHER">Other</option>
-          </select>
+            <SelectTrigger aria-label="Category" className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All categories</SelectItem>
+              {categories.map((category) => (
+                <SelectItem key={category.id} value={category.id}>
+                  {category.name}
+                  {category.isActive ? "" : " (Inactive)"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </label>
       ) : null}
 

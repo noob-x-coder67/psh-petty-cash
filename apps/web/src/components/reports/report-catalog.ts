@@ -43,7 +43,7 @@ export const REPORT_CATALOG: ReportCatalogEntry[] = [
   {
     key: "RPT-04",
     title: "Category Analysis",
-    purpose: "Building, Vehicle and Other totals, percentages and trends",
+    purpose: "Managed category totals, percentages and trends",
     category: "Expenses & Vendors",
     implemented: true,
   },

@@ -16,12 +16,14 @@ function user(overrides: Partial<AuthenticatedUser["unitScope"]>): Authenticated
 }
 
 describe("parseFiltersQuery", () => {
+  const categoryId = "0198f7c8-8d9a-7000-8000-000000000001";
+
   it("returns an empty filter when no query string is given", () => {
     expect(parseFiltersQuery(undefined)).toEqual({});
   });
 
   it("parses and validates a JSON filter string", () => {
-    expect(parseFiltersQuery('{"category":"BUILDING"}')).toEqual({ category: "BUILDING" });
+    expect(parseFiltersQuery(`{"categoryId":"${categoryId}"}`)).toEqual({ categoryId });
   });
 
   it("rejects malformed JSON with a 400, not a 500", () => {
@@ -29,7 +31,11 @@ describe("parseFiltersQuery", () => {
   });
 
   it("rejects a JSON value that fails ReportFilterSchema", () => {
-    expect(() => parseFiltersQuery('{"category":"NOT_A_CATEGORY"}')).toThrow(BadRequestException);
+    expect(() => parseFiltersQuery('{"categoryId":"not-a-uuid"}')).toThrow(BadRequestException);
+  });
+
+  it("rejects the removed legacy category filter instead of silently ignoring it", () => {
+    expect(() => parseFiltersQuery('{"category":"BUILDING"}')).toThrow(BadRequestException);
   });
 });
 

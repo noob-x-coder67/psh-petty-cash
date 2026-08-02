@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { PrismaClient, Prisma, type ExpenseCategory } from "@prisma/client";
+import { PrismaClient, Prisma } from "@prisma/client";
 
 // Build Plan §5.1: "Phase 6 depends on Phase 3 data existing in volume; seed 50k
 // synthetic vouchers at the start of Phase 6 so NFR-002/003 are measured against
@@ -24,6 +24,10 @@ import { PrismaClient, Prisma, type ExpenseCategory } from "@prisma/client";
 const TOTAL_VOUCHERS = Number(process.env.SEED_VOLUME_TOTAL ?? 50_000);
 const BATCH_SIZE = 500;
 const SPREAD_DAYS = 365;
+// PSH-BHW is the integration suite's dedicated Month Close fixture. Its live
+// expected balance must remain physically countable, so volume data belongs on
+// the other accounts rather than contaminating that cross-module fixture.
+const VOLUME_EXCLUDED_UNIT_CODES = new Set(["PSH-BHW"]);
 
 // Repetition = weight, a cheap way to get a Zipf-ish "a few vendors dominate" spread
 // for RPT-05 (Vendor/Payee Analysis) to have something worth ranking.
@@ -64,11 +68,10 @@ function pick<T>(pool: readonly T[]): T {
   return item;
 }
 
-function weightedCategory(): ExpenseCategory {
-  const roll = Math.random();
-  if (roll < 0.4) return "BUILDING";
-  if (roll < 0.7) return "VEHICLE";
-  return "OTHER";
+interface ManagedCategory {
+  id: string;
+  name: string;
+  requiresExplanation: boolean;
 }
 
 // 70% small/common, 25% medium, 5% occasionally large enough to push a balance
@@ -83,7 +86,10 @@ function randomAmount(): Prisma.Decimal {
   } else {
     value = 15000 + Math.random() * 60000;
   }
-  return new Prisma.Decimal(value.toFixed(2));
+  // Cash Count v1 supports whole-rupee notes down to PKR 10. Keep synthetic
+  // balances exactly decomposable so the volume fixture and Month Close's
+  // denomination invariant can coexist in the same integration database.
+  return new Prisma.Decimal(Math.round(value / 10) * 10);
 }
 
 function sortedRandomDates(count: number, now: Date): Date[] {
@@ -119,7 +125,7 @@ interface LineRow {
   voucherId: string;
   lineNo: number;
   description: string;
-  category: ExpenseCategory;
+  categoryId: string;
   amount: Prisma.Decimal;
   otherExplanation: string | null;
 }
@@ -156,6 +162,7 @@ async function seedAccountVouchers(
   count: number,
   enteredBy: string,
   now: Date,
+  categories: readonly ManagedCategory[],
 ): Promise<void> {
   let runningBalance = account.cachedBalance;
   const yearCounters = new Map<number, number>();
@@ -190,7 +197,7 @@ async function seedAccountVouchers(
       const isDuplicateRoll = Math.random() < 0.02 && previousVendor && previousAmount && previousDate;
       const vendorName = isDuplicateRoll ? (previousVendor as string) : pick(VENDOR_POOL);
       const billTotal = isDuplicateRoll ? (previousAmount as Prisma.Decimal) : randomAmount();
-      const category = weightedCategory();
+      const category = pick(categories);
       const hasBill = Math.random() > 0.05;
       // A separate, direct probability, not the real isBackdated() working-day
       // calculation — this script bulk-inserts a full year of history in one pass, so
@@ -220,10 +227,10 @@ async function seedAccountVouchers(
       lineRows.push({
         voucherId,
         lineNo: 1,
-        description: `Synthetic ${category.toLowerCase()} expense`,
-        category,
+        description: `Synthetic ${category.name.toLowerCase()} expense`,
+        categoryId: category.id,
         amount: billTotal,
-        otherExplanation: category === "OTHER" ? "Synthetic seed: miscellaneous expense" : null,
+        otherExplanation: category.requiresExplanation ? "Synthetic seed: category explanation" : null,
       });
       ledgerRows.push({
         accountId: account.id,
@@ -275,10 +282,22 @@ async function seedAccountVouchers(
 async function main(): Promise<void> {
   const prisma = new PrismaClient();
   const superAdmin = await prisma.user.findUniqueOrThrow({ where: { email: "superadmin@psh.local" } });
+  const categories = await prisma.expenseCategory.findMany({
+    where: { isActive: true },
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, requiresExplanation: true },
+  });
+  if (categories.length === 0) {
+    throw new Error(
+      "No active managed expense categories found — activate at least one category before volume seeding.",
+    );
+  }
 
   await ensureAccountsForAllUnits(prisma, superAdmin.id);
 
-  const accounts = await prisma.pettyCashAccount.findMany({ include: { unit: true } });
+  const accounts = (await prisma.pettyCashAccount.findMany({ include: { unit: true } })).filter(
+    (account) => !VOLUME_EXCLUDED_UNIT_CODES.has(account.unit.code),
+  );
   if (accounts.length === 0) {
     throw new Error("No petty-cash accounts found even after ensureAccountsForAllUnits — check seed data.");
   }
@@ -288,7 +307,7 @@ async function main(): Promise<void> {
 
   console.log(`Seeding ~${perAccount} synthetic vouchers across ${accounts.length} accounts...`);
   for (const account of accounts) {
-    await seedAccountVouchers(prisma, account, perAccount, superAdmin.id, now);
+    await seedAccountVouchers(prisma, account, perAccount, superAdmin.id, now, categories);
   }
 
   console.log(`Done — seeded ${perAccount * accounts.length} synthetic vouchers.`);

@@ -1,13 +1,21 @@
 "use client";
 
-import type { CreateVoucherRequest } from "@psh/contracts";
+import type { CreateVoucherRequest, ExpenseCategory } from "@psh/contracts";
 import { Button, Input } from "@psh/ui";
 import { Trash2 } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 import { CategorySelector } from "./category-selector";
 import { Field } from "./field";
 
-export function LineItemRow({ index, onRemove }: { index: number; onRemove?: () => void }) {
+export function LineItemRow({
+  categories,
+  index,
+  onRemove,
+}: {
+  categories: ExpenseCategory[];
+  index: number;
+  onRemove?: () => void;
+}) {
   const {
     register,
     watch,
@@ -15,7 +23,8 @@ export function LineItemRow({ index, onRemove }: { index: number; onRemove?: () 
     formState: { errors },
   } = useFormContext<CreateVoucherRequest>();
 
-  const category = watch(`lines.${index}.category`);
+  const categoryId = watch(`lines.${index}.categoryId`);
+  const category = categories.find((candidate) => candidate.id === categoryId);
   const lineErrors = errors.lines?.[index];
 
   return (
@@ -41,11 +50,12 @@ export function LineItemRow({ index, onRemove }: { index: number; onRemove?: () 
         ) : null}
       </div>
       <CategorySelector
-        value={category}
-        onChange={(next) => setValue(`lines.${index}.category`, next, { shouldValidate: true })}
+        categories={categories}
+        value={categoryId}
+        onChange={(next) => setValue(`lines.${index}.categoryId`, next, { shouldValidate: true })}
       />
-      {category === "OTHER" ? (
-        <Field label="Other explanation" error={lineErrors?.otherExplanation?.message}>
+      {category?.requiresExplanation ? (
+        <Field label={`${category.name} explanation`} error={lineErrors?.otherExplanation?.message}>
           <Input {...register(`lines.${index}.otherExplanation`)} />
         </Field>
       ) : null}

@@ -23,7 +23,7 @@ export interface CreateLineParams {
   voucherId: string;
   lineNo: number;
   description: string;
-  category: "BUILDING" | "VEHICLE" | "OTHER";
+  categoryId: string;
   amount: Prisma.Decimal;
   otherExplanation?: string;
 }
@@ -31,7 +31,7 @@ export interface CreateLineParams {
 export interface VoucherListFilters {
   search?: string;
   checked?: boolean;
-  category?: "BUILDING" | "VEHICLE" | "OTHER";
+  categoryId?: string;
   dateFrom?: Date;
   dateTo?: Date;
 }
@@ -58,12 +58,26 @@ const ATTACHMENTS_INCLUDE = {
   },
 } satisfies Prisma.ExpenseVoucher$attachmentsArgs;
 
-export type ExpenseVoucherWithLines = Prisma.ExpenseVoucherGetPayload<{
-  include: { lines: true; attachments: typeof ATTACHMENTS_INCLUDE };
+const CATEGORY_SELECT = {
+  id: true,
+  name: true,
+  requiresExplanation: true,
+  isActive: true,
+  sortOrder: true,
+} satisfies Prisma.ExpenseCategorySelect;
+
+const LINES_INCLUDE = {
+  include: { category: { select: CATEGORY_SELECT } },
+} satisfies Prisma.ExpenseVoucher$linesArgs;
+
+type ExpenseVoucherDbWithLines = Prisma.ExpenseVoucherGetPayload<{
+  include: { lines: typeof LINES_INCLUDE; attachments: typeof ATTACHMENTS_INCLUDE };
 }>;
 
+export type ExpenseVoucherWithLines = ExpenseVoucherDbWithLines;
+
 const REGISTER_INCLUDE = {
-  lines: true,
+  lines: LINES_INCLUDE,
   attachments: ATTACHMENTS_INCLUDE,
   account: {
     select: {
@@ -85,10 +99,11 @@ export class ExpensesRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   async findVoucherById(id: string): Promise<ExpenseVoucherWithLines | null> {
-    return this.prisma.expenseVoucher.findUnique({
+    const voucher = await this.prisma.expenseVoucher.findUnique({
       where: { id },
-      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
+      include: { lines: LINES_INCLUDE, attachments: ATTACHMENTS_INCLUDE },
     });
+    return voucher;
   }
 
   /** Keyset pagination (expense_date, id) — not OFFSET, per Build Plan §2.4/NFR-003.
@@ -134,7 +149,9 @@ export class ExpensesRepository {
         ...(filters.checked !== undefined
           ? { checkedAt: filters.checked ? { not: null } : null }
           : {}),
-        ...(filters.category ? { lines: { some: { category: filters.category } } } : {}),
+        ...(filters.categoryId
+          ? { lines: { some: { categoryId: filters.categoryId } } }
+          : {}),
         ...(filters.dateFrom || filters.dateTo
           ? {
               expenseDate: {
@@ -150,7 +167,10 @@ export class ExpensesRepository {
       include: REGISTER_INCLUDE,
     });
 
-    return records.map(({ account, ...voucher }) => ({ ...voucher, unit: account.unit }));
+    return records.map(({ account, ...voucher }) => ({
+      ...voucher,
+      unit: account.unit,
+    }));
   }
 
   async findAccountUnitCode(accountId: string): Promise<string | null> {
@@ -210,7 +230,7 @@ export class ExpensesRepository {
     return client.expenseVoucher.update({
       where: { id: voucherId },
       data: { balanceAfter },
-      include: { lines: true, attachments: ATTACHMENTS_INCLUDE },
+      include: { lines: LINES_INCLUDE, attachments: ATTACHMENTS_INCLUDE },
     });
   }
 

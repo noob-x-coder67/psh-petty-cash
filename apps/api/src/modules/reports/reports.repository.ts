@@ -95,14 +95,14 @@ export class ReportsRepository {
     }
     return {
       voucher: voucherWhere,
-      category: filter.category,
+      categoryId: filter.categoryId,
     };
   }
 
   async listExpenseLines(unitIds: string[] | null, period: ReportPeriod, filter: ReportFilter) {
     return this.prisma.expenseLine.findMany({
       where: this.buildLineWhere(unitIds, period, filter),
-      include: { voucher: { include: { account: { include: { unit: true } } } } },
+      include: { category: true, voucher: { include: { account: { include: { unit: true } } } } },
       orderBy: [{ voucher: { expenseDate: "asc" } }, { voucher: { voucherNo: "asc" } }, { lineNo: "asc" }],
     });
   }

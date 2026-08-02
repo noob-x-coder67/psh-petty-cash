@@ -90,6 +90,42 @@ describe("POST /exports — validation", () => {
 });
 
 describe("async export lifecycle (Build Plan §3.7)", () => {
+  it("persists a managed category-ID filter and exports the current category name", async () => {
+    const cookies = await loginAs("financemanager@psh.local");
+    const category = await prisma.expenseCategory.findFirstOrThrow({
+      where: { lines: { some: { voucher: { state: "ACTIVE" } } } },
+      orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    });
+    const createRes = await request(app.getHttpServer())
+      .post("/exports")
+      .set("Cookie", cookies)
+      .send({
+        reportKey: "RPT-03",
+        filters: { categoryId: category.id, dateFrom: "2000-01-01", dateTo: "3000-01-01" },
+        format: "CSV",
+      })
+      .expect(201);
+
+    const final = await pollUntilTerminal(cookies, createRes.body.exportId);
+    expect(final.body.status).toBe("READY");
+
+    const downloadRes = await request(app.getHttpServer())
+      .get(`/exports/${createRes.body.exportId}/download`)
+      .set("Cookie", cookies)
+      .expect(200);
+    expect(downloadRes.text).toContain(category.name);
+    expect(downloadRes.text).not.toContain("[object Object]");
+
+    const stored = await prisma.reportExport.findUniqueOrThrow({
+      where: { id: createRes.body.exportId },
+    });
+    expect(stored.filters).toEqual({
+      categoryId: category.id,
+      dateFrom: "2000-01-01",
+      dateTo: "3000-01-01",
+    });
+  }, 20_000);
+
   it("POST /exports returns PENDING immediately, then reaches READY with a downloadable file", async () => {
     const cookies = await loginAs("financemanager@psh.local");
     const createRes = await request(app.getHttpServer())

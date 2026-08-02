@@ -15,6 +15,7 @@ import { AttachmentsController } from "../../modules/attachments/attachments.con
 import { AuthController } from "../../modules/auth/auth.controller";
 import { MeController } from "../../modules/auth/me.controller";
 import { DashboardController } from "../../modules/dashboard/dashboard.controller";
+import { AdminCategoriesController, CategoriesController } from "../../modules/categories/categories.controller";
 import { ExpensesController } from "../../modules/expenses/expenses.controller";
 import { MonthCloseController } from "../../modules/month-close/month-close.controller";
 import { ReplenishmentRequestsController } from "../../modules/month-close/replenishment-requests.controller";
@@ -40,6 +41,8 @@ const ALL_CONTROLLERS: Constructor[] = [
   OrganizationController,
   AdminUnitsController,
   DashboardController,
+  CategoriesController,
+  AdminCategoriesController,
   AccountsController,
   AllocationsController,
   ExpensesController,

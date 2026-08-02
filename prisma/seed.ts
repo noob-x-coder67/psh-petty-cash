@@ -1,8 +1,8 @@
 import argon2 from "argon2";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { PrismaClient } from "@prisma/client";
-import { DEMO_PASSWORD, DEMO_USERS, PERMISSIONS, ROLE_PERMISSIONS, ROLES, UNITS } from "./seed-data";
-
-const prisma = new PrismaClient();
+import { DEMO_PASSWORD, DEMO_USERS, PERMISSIONS, ROLE_PERMISSIONS, ROLES, UNITS } from "./seed-data.js";
 
 // Same parameters as apps/api/src/common/security/password.ts (Build Plan §6.1 minimum:
 // m=19456,t=2,p=1). Duplicated rather than imported across the prisma/ <-> apps/api
@@ -11,7 +11,10 @@ async function hashDemoPassword(plain: string): Promise<string> {
   return argon2.hash(plain, { type: argon2.argon2id, memoryCost: 19456, timeCost: 2, parallelism: 1 });
 }
 
-async function main(): Promise<void> {
+// Expense categories deliberately do not appear in this seed. Their initial values are
+// installed once by the managed-category migration; every later name/status/order is
+// Finance-owned reference data and must survive any number of pnpm db:seed runs.
+export async function seedDatabase(prisma: PrismaClient): Promise<void> {
   const passwordHash = await hashDemoPassword(DEMO_PASSWORD);
 
   for (const unit of UNITS) {
@@ -123,12 +126,21 @@ async function main(): Promise<void> {
   }
 }
 
-main()
-  .then(async () => {
+async function main(): Promise<void> {
+  const prisma = new PrismaClient();
+  try {
+    await seedDatabase(prisma);
+  } finally {
     await prisma.$disconnect();
-  })
-  .catch(async (error: unknown) => {
+  }
+}
+
+const scriptPath = process.argv[1];
+const isMainModule = scriptPath !== undefined && import.meta.url === pathToFileURL(resolve(scriptPath)).href;
+
+if (isMainModule) {
+  main().catch((error: unknown) => {
     console.error(error);
-    await prisma.$disconnect();
     process.exit(1);
   });
+}

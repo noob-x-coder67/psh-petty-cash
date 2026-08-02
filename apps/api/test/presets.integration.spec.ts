@@ -5,6 +5,7 @@ import request from "supertest";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { DEMO_PASSWORD } from "../../../prisma/seed-data";
 import { AppModule } from "../src/app.module";
+import { PrismaService } from "../src/common/prisma/prisma.service";
 
 // SRS §12.8 "saved presets per Finance user". The first test in this file exists
 // specifically to guard against a routing-order bug: PresetsController's literal
@@ -13,6 +14,7 @@ import { AppModule } from "../src/app.module";
 // rejects "presets" as an invalid ReportKey.
 
 let app: INestApplication;
+let prisma: PrismaService;
 const sessions = new Map<string, string[]>();
 
 function extractCookies(res: request.Response): string[] {
@@ -39,6 +41,7 @@ beforeAll(async () => {
   app = moduleRef.createNestApplication();
   app.use(cookieParser());
   await app.init();
+  prisma = app.get(PrismaService);
 });
 
 afterAll(async () => {
@@ -54,6 +57,37 @@ describe("GET /reports/presets does not collide with GET /reports/:reportKey", (
 });
 
 describe("preset CRUD", () => {
+  it("persists and reloads a managed category ID without a legacy category field", async () => {
+    const cookies = await loginAs("financemanager@psh.local");
+    const category = await prisma.expenseCategory.findUniqueOrThrow({ where: { name: "Food" } });
+    const presetName = `Managed category preset ${Date.now()}`;
+
+    const createRes = await request(app.getHttpServer())
+      .post("/reports/presets")
+      .set("Cookie", cookies)
+      .send({ reportKey: "RPT-03", name: presetName, filters: { categoryId: category.id } })
+      .expect(201);
+
+    expect(createRes.body.filters).toEqual({ categoryId: category.id });
+    const stored = await prisma.reportPreset.findUniqueOrThrow({ where: { id: createRes.body.id } });
+    expect(stored.filters).toEqual({ categoryId: category.id });
+    expect(stored.filters).not.toHaveProperty("category");
+
+    const listRes = await request(app.getHttpServer())
+      .get("/reports/presets")
+      .query({ reportKey: "RPT-03" })
+      .set("Cookie", cookies)
+      .expect(200);
+    expect(
+      listRes.body.find((preset: { id: string }) => preset.id === createRes.body.id)?.filters,
+    ).toEqual({ categoryId: category.id });
+
+    await request(app.getHttpServer())
+      .delete(`/reports/presets/${createRes.body.id}`)
+      .set("Cookie", cookies)
+      .expect(204);
+  });
+
   it("creates, lists, and deletes a preset", async () => {
     const cookies = await loginAs("financemanager@psh.local");
     const presetName = `Test preset ${Date.now()}`;

@@ -1,6 +1,7 @@
 export * from "./allocations.js";
 export * from "./attachments.js";
 export * from "./auth.js";
+export * from "./categories.js";
 export * from "./dashboard.js";
 export * from "./expenses.js";
 export * from "./month-close.js";

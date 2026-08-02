@@ -1,6 +1,11 @@
 import { ConflictException, ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma, type ReportPreset as PrismaReportPreset } from "@prisma/client";
-import type { CreatePresetRequest, ReportFilter, ReportKey, ReportPreset } from "@psh/contracts";
+import {
+  ReportFilterSchema,
+  type CreatePresetRequest,
+  type ReportKey,
+  type ReportPreset,
+} from "@psh/contracts";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PresetsRepository } from "./presets.repository";
 
@@ -10,7 +15,9 @@ function toContractShape(row: PrismaReportPreset): ReportPreset {
     userId: row.userId,
     reportKey: row.reportKey as ReportKey,
     name: row.name,
-    filters: row.filters as ReportFilter,
+    // Phase 1 migrated every live legacy `category` value to `categoryId`. Parse on
+    // reads as well as writes so an unmigrated/stale preset cannot be silently applied.
+    filters: ReportFilterSchema.parse(row.filters),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

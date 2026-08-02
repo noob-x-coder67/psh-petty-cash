@@ -39,7 +39,7 @@ const REPORT_TITLES: Record<string, string> = {
 const REPORT_FIELDS: Record<string, ReportFilterField[]> = {
   "RPT-01": ["dateRange", "unit"],
   "RPT-02": ["dateRange", "unit"],
-  "RPT-03": ["dateRange", "unit", "category", "vendor", "amountRange", "checked", "hasBill"],
+  "RPT-03": ["dateRange", "unit", "categoryId", "vendor", "amountRange", "checked", "hasBill"],
   "RPT-04": ["dateRange", "unit", "vendor", "amountRange", "checked", "hasBill"],
   "RPT-05": ["dateRange", "unit", "vendor"],
   "RPT-06": ["dateRange", "unit", "vendor", "checked", "hasBill"],
@@ -52,7 +52,7 @@ const REPORT_FIELDS: Record<string, ReportFilterField[]> = {
   "RPT-13": ["dateRange", "unit"],
   "RPT-14": ["dateRange", "unit", "actorSearch", "action", "entityType"],
   "RPT-15": ["dateRange", "unit"],
-  "RPT-16": ["dateRange", "unit", "category", "vendor", "amountRange", "checked", "hasBill"],
+  "RPT-16": ["dateRange", "unit", "categoryId", "vendor", "amountRange", "checked", "hasBill"],
 };
 
 // The 4 flagship reports (Phase 6b/6c) get bespoke chart/table views; every other

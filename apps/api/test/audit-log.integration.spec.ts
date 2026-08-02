@@ -14,6 +14,7 @@ import { PrismaService } from "../src/common/prisma/prisma.service";
 
 let app: INestApplication;
 let prisma: PrismaService;
+let buildingCategoryId = "";
 
 function extractCookies(res: request.Response): string[] {
   const raw = res.headers["set-cookie"] as unknown;
@@ -32,6 +33,11 @@ beforeAll(async () => {
   app.use(cookieParser());
   await app.init();
   prisma = app.get(PrismaService);
+  buildingCategoryId = (
+    await prisma.expenseCategory.findUniqueOrThrow({
+      where: { name: "Repair & Maintenance: Building" },
+    })
+  ).id;
 });
 
 afterAll(async () => {
@@ -86,22 +92,35 @@ describe("login/logout write audit rows", () => {
 
 describe("account/allocation mutations write audit rows", () => {
   it("ACCOUNT_ENABLE is recorded with the new account in `after`", async () => {
-    const unit = await prisma.organizationalUnit.findUniqueOrThrow({ where: { code: "PSH-SUK" } });
+    // Every seeded petty-cash-enabled unit already has an account. Use an isolated unit
+    // so this assertion proves the mutation itself rather than depending on an audit row
+    // left behind by an earlier run against a reused database.
+    const marker = randomUUID().slice(0, 8);
+    const unit = await prisma.organizationalUnit.create({
+      data: {
+        code: `AUD-${marker}`,
+        name: `Audit Account ${marker}`,
+        type: "CENTER",
+        pettyCashEnabled: true,
+      },
+    });
     const loginRes = await loginAs("financemanager@psh.local");
     const cookies = extractCookies(loginRes);
 
-    const alreadyExists = await prisma.pettyCashAccount.findUnique({ where: { unitId: unit.id } });
-    if (!alreadyExists) {
+    try {
       await request(app.getHttpServer()).post(`/accounts/${unit.id}`).set("Cookie", cookies).expect(201);
-    }
 
-    const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
-    const entries = await prisma.auditLog.findMany({
-      where: { entityType: "petty_cash_accounts", entityId: account.id, action: "ACCOUNT_ENABLE" },
-    });
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.unitId).toBe(unit.id);
-    expect((entries[0]?.after as { unitId?: string } | null)?.unitId).toBe(unit.id);
+      const account = await prisma.pettyCashAccount.findUniqueOrThrow({ where: { unitId: unit.id } });
+      const entries = await prisma.auditLog.findMany({
+        where: { entityType: "petty_cash_accounts", entityId: account.id, action: "ACCOUNT_ENABLE" },
+      });
+      expect(entries).toHaveLength(1);
+      expect(entries[0]?.unitId).toBe(unit.id);
+      expect((entries[0]?.after as { unitId?: string } | null)?.unitId).toBe(unit.id);
+    } finally {
+      await prisma.pettyCashAccount.deleteMany({ where: { unitId: unit.id } });
+      await prisma.organizationalUnit.delete({ where: { id: unit.id } });
+    }
   });
 
   it("ALLOCATION_CREATE and ALLOCATION_CONFIRM are both recorded, confirm shows a before/after transition", async () => {
@@ -219,7 +238,7 @@ describe("audit rows roll back with their business mutation", () => {
         justification: "Audit-atomicity test — expected to fail on a DB CHECK constraint",
         billTotal: "0.00",
         hasBill: true,
-        lines: [{ description: "Zero-amount line", category: "BUILDING", amount: "0.00" }],
+        lines: [{ description: "Zero-amount line", categoryId: buildingCategoryId, amount: "0.00" }],
       });
 
     expect(res.status).not.toBe(201); // must not have succeeded — this is proving a failure path

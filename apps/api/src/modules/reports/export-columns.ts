@@ -9,6 +9,13 @@ function yesNo(value: unknown): string {
   return value ? "Yes" : "No";
 }
 
+function categoryName(value: unknown): string {
+  if (typeof value === "object" && value !== null && "name" in value && typeof value.name === "string") {
+    return value.name;
+  }
+  throw new Error("Report row is missing managed category metadata");
+}
+
 // One column set per report, shared by the CSV/Excel/PDF builders so all three formats
 // present identical columns in identical order. Only trend/summary data outside `rows`
 // (e.g. RPT-04's monthly trend series) isn't exported — it's chart-only, in-app data;
@@ -30,7 +37,7 @@ const COLUMNS: Record<string, ExportColumn[]> = {
     { header: "Unit", get: (r) => String(r.unitCode) },
     { header: "Vendor", get: (r) => String(r.vendorName) },
     { header: "Line Description", get: (r) => String(r.lineDescription) },
-    { header: "Category", get: (r) => String(r.category) },
+    { header: "Category", get: (r) => categoryName(r.category) },
     { header: "Line Amount", get: (r) => String(r.lineAmount) },
     { header: "Bill Total", get: (r) => String(r.billTotal) },
     { header: "Checked", get: (r) => yesNo(r.checked) },
@@ -38,7 +45,7 @@ const COLUMNS: Record<string, ExportColumn[]> = {
     { header: "Backdated", get: (r) => yesNo(r.isBackdated) },
   ],
   "RPT-04": [
-    { header: "Category", get: (r) => String(r.category) },
+    { header: "Category", get: (r) => categoryName(r.category) },
     { header: "Total Amount", get: (r) => String(r.totalAmount) },
     { header: "Line Count", get: (r) => String(r.lineCount) },
     { header: "% of Total", get: (r) => String(r.percentageOfTotal) },
@@ -158,7 +165,7 @@ const COLUMNS: Record<string, ExportColumn[]> = {
   ],
   "RPT-16": [
     { header: "Description", get: (r) => String(r.description) },
-    { header: "Category", get: (r) => String(r.category) },
+    { header: "Category", get: (r) => categoryName(r.category) },
     { header: "Total Amount", get: (r) => String(r.totalAmount) },
     { header: "Occurrences", get: (r) => String(r.occurrenceCount) },
   ],

@@ -12,9 +12,9 @@ type Story = StoryObj<typeof CategoryChip>;
 export const AllCategories: Story = {
   render: () => (
     <div className="flex gap-2">
-      <CategoryChip category="BUILDING" />
-      <CategoryChip category="VEHICLE" />
-      <CategoryChip category="OTHER" />
+      <CategoryChip category="Food" />
+      <CategoryChip category="Repair & Maintenance: Vehicle" />
+      <CategoryChip category="Miscellaneous" />
     </div>
   ),
 };

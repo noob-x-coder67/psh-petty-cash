@@ -6,13 +6,14 @@ import {
   type CreateVoucherRequest,
   type CreateVoucherResult,
   type DashboardUnitResponse,
+  type ExpenseCategory,
   type OrganizationalUnit,
 } from "@psh/contracts";
 import { Button, Card, CardContent, CardHeader, CardTitle, Input, Label, Money, cn } from "@psh/ui";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FormProvider, useFieldArray, useForm } from "react-hook-form";
 import { apiFetch } from "../../lib/api-client";
 import { Field } from "./field";
@@ -32,6 +33,10 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
     queryKey: ["dashboard", "unit", unit.id],
     queryFn: () => apiFetch<DashboardUnitResponse>(`/dashboard/unit/${unit.id}`),
   });
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery({
+    queryKey: ["expense-categories", "active"],
+    queryFn: () => apiFetch<ExpenseCategory[]>("/expense-categories"),
+  });
 
   const form = useForm<CreateVoucherRequest>({
     resolver: zodResolver(CreateVoucherRequestSchema),
@@ -42,17 +47,30 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
       justification: "",
       billTotal: "",
       hasBill: true,
-      lines: [{ description: "", category: "BUILDING", amount: "" }],
+      lines: [{ description: "", categoryId: "", amount: "" }],
     },
   });
   const {
     register,
     control,
+    getValues,
     handleSubmit,
+    setError,
+    setValue,
     watch,
     formState: { errors, isSubmitting },
   } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "lines" });
+
+  useEffect(() => {
+    const firstCategory = categories[0];
+    if (!firstCategory) return;
+    getValues("lines").forEach((line, index) => {
+      if (!line.categoryId) {
+        setValue(`lines.${index}.categoryId`, firstCategory.id, { shouldValidate: true });
+      }
+    });
+  }, [categories, getValues, setValue]);
 
   const lines = watch("lines");
   const billTotal = watch("billTotal");
@@ -70,6 +88,19 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
 
   async function onSubmit(values: CreateVoucherRequest): Promise<void> {
     setServerError(null);
+    let explanationInvalid = false;
+    values.lines.forEach((line, index) => {
+      const category = categories.find((candidate) => candidate.id === line.categoryId);
+      if (category?.requiresExplanation && (line.otherExplanation?.trim().length ?? 0) < 5) {
+        setError(`lines.${index}.otherExplanation`, {
+          type: "manual",
+          message: `${category.name} requires an explanation of at least 5 characters`,
+        });
+        explanationInvalid = true;
+      }
+    });
+    if (explanationInvalid) return;
+
     try {
       const created = await apiFetch<CreateVoucherResult>("/expenses", {
         method: "POST",
@@ -191,6 +222,7 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
             {fields.map((field, index) => (
               <LineItemRow
                 key={field.id}
+                categories={categories}
                 index={index}
                 onRemove={fields.length > 1 ? () => remove(index) : undefined}
               />
@@ -200,7 +232,9 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
               variant="secondary"
               size="sm"
               className="self-start"
-              onClick={() => append({ description: "", category: "BUILDING", amount: "" })}
+              onClick={() =>
+                append({ description: "", categoryId: categories[0]?.id ?? "", amount: "" })
+              }
             >
               <Plus className="h-4 w-4" aria-hidden />
               Add line
@@ -246,7 +280,11 @@ export function RecordExpenseForm({ unit }: { unit: OrganizationalUnit }) {
 
         {serverError ? <p className="text-sm text-coral-500">{serverError}</p> : null}
 
-        <Button type="submit" disabled={isSubmitting} className="self-start">
+        <Button
+          type="submit"
+          disabled={isSubmitting || categoriesLoading || categories.length === 0}
+          className="self-start"
+        >
           {isSubmitting ? "Saving..." : "Save voucher"}
         </Button>
       </form>

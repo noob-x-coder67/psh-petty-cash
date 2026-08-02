@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { StorageModule } from "../../storage/storage.module";
+import { CategoriesModule } from "../categories/categories.module";
 import { MonthCloseModule } from "../month-close/month-close.module";
 import { ExportsController } from "./exports.controller";
 import { ExportsRepository } from "./exports.repository";
@@ -12,7 +13,7 @@ import { ReportsRepository } from "./reports.repository";
 import { ReportsService } from "./reports.service";
 
 @Module({
-  imports: [StorageModule, MonthCloseModule],
+  imports: [StorageModule, MonthCloseModule, CategoriesModule],
   // PresetsController (a literal "reports/presets" path) must be registered before
   // ReportsController — Express/Nest matches routes in registration order, and
   // ReportsController's GET /reports/:reportKey would otherwise swallow GET /reports/

@@ -76,7 +76,7 @@ export function VoucherDetail({ voucher, user }: { voucher: ExpenseVoucher; user
               {voucher.lines.map((line) => (
                 <li key={line.id} className="flex items-center justify-between py-2 text-sm">
                   <div className="flex items-center gap-2">
-                    <CategoryChip category={line.category} />
+                    <CategoryChip category={line.category.name} />
                     <span className="text-ink">{line.description}</span>
                   </div>
                   <Money value={line.amount} />

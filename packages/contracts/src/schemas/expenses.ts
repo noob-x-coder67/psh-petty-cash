@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AttachmentSchema } from "./attachments.js";
+import { ExpenseCategorySchema } from "./categories.js";
 
 const decimalString = z
   .string()
@@ -23,7 +24,7 @@ const optionalIsoDate = z
 
 export const ExpenseLineInputSchema = z.object({
   description: z.string().min(1),
-  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
+  categoryId: z.string().uuid(),
   amount: decimalString,
   otherExplanation: z.string().optional(),
 });
@@ -51,19 +52,9 @@ export const CreateVoucherRequestSchema = z
       });
     }
 
-    // BR-007: attached per-line (not to the "lines" array root) so the form can render it
-    // inline next to the actual "Other explanation" input it's about — a prior version used
-    // path: ["lines"], which no field in the UI reads, so this failure blocked saving with
-    // zero visible feedback regardless of the "Bill available" checkbox state.
-    data.lines.forEach((line, index) => {
-      if (line.category === "OTHER" && (line.otherExplanation?.trim().length ?? 0) < 5) {
-        ctx.addIssue({
-          code: "custom",
-          message: "OTHER category lines require an explanation of at least 5 characters",
-          path: ["lines", index, "otherExplanation"],
-        });
-      }
-    });
+    // BR-007 is metadata-driven now, so it cannot be evaluated by this transport-only
+    // schema. ExpensesService resolves each category ID and applies the rule atomically;
+    // PostgreSQL's category trigger remains the final backstop.
   });
 export type CreateVoucherRequest = z.infer<typeof CreateVoucherRequestSchema>;
 
@@ -76,6 +67,9 @@ export const ExpenseListUnitScopeSchema = z.union([
   z.literal(EXPENSE_ALL_UNITS),
 ]);
 export type ExpenseListUnitScope = z.infer<typeof ExpenseListUnitScopeSchema>;
+
+export const ExpenseCategoryFilterSchema = z.string().uuid().optional();
+export type ExpenseCategoryFilter = z.infer<typeof ExpenseCategoryFilterSchema>;
 
 // Only non-financial fields are directly editable (BR-020: fix amounts via reversal +
 // re-entry, a compensating action, never an in-place edit of a posted total).
@@ -101,7 +95,8 @@ export const ExpenseLineSchema = z.object({
   voucherId: z.string().uuid(),
   lineNo: z.number().int(),
   description: z.string(),
-  category: z.enum(["BUILDING", "VEHICLE", "OTHER"]),
+  categoryId: z.string().uuid(),
+  category: ExpenseCategorySchema,
   amount: z.string(),
   otherExplanation: z.string().nullable(),
 });
